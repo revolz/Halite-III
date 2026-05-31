@@ -162,12 +162,10 @@ class ActorCritic(nn.Module):
     def save(self, path: str):
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         torch.save(self.state_dict(), path)
-        print(f"Model saved → {path}")
 
     @classmethod
     def load(cls, path: str, device: str = 'cpu', **kwargs) -> 'ActorCritic':
         model = cls(**kwargs)
         model.load_state_dict(torch.load(path, map_location=device))
         model.eval()
-        print(f"Model loaded ← {path}")
         return model
