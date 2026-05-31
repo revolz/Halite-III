@@ -283,8 +283,9 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
         game.update_frame()
         me      = game.me
         gmap    = game.game_map
-        commands = []
 
+        # First pass: resolve all ships' actions and destinations
+        ship_resolved: list = []   # (ship, action_idx)
         for ship in me.get_ships():
             spatial = extract_spatial_hlt(game, ship.position, me)
             scalars = extract_scalars_hlt(game, ship, me)
@@ -301,7 +302,7 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
             if ship.id in homing_ships:
                 action_idx = ACTION_HOME
 
-            # Resolve meta-actions to primitives (same logic as rl_env.py)
+            # Resolve meta-actions to primitives
             if action_idx == ACTION_RANDOM:
                 action_idx = random.randint(0, 4)
             elif action_idx == ACTION_HOME:
@@ -310,17 +311,40 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
                 if action_idx == ACTION_STAY:   # arrived at deposit — cancel home mode
                     homing_ships.discard(ship.id)
 
-            direction_str = ACTION_TO_DIR[action_idx]
+            ship_resolved.append((ship, action_idx))
 
+        # Stagger homing ships: if multiple ships would arrive at the same
+        # deposit cell this turn they'd collide. Heaviest cargo gets priority.
+        W, H = gmap.width, gmap.height
+        my_deposits = {me.shipyard.position} | {d.position for d in me.get_dropoffs()}
+        _dir_delta = {
+            ACTION_STAY:  (0, 0),  ACTION_NORTH: (0, -1), ACTION_SOUTH: (0, 1),
+            ACTION_EAST:  (1, 0),  ACTION_WEST:  (-1, 0),
+        }
+        deposit_arrivals: dict = {}
+        for ship, act in ship_resolved:
+            ddx, ddy = _dir_delta[act]
+            dest = Position((ship.position.x + ddx) % W, (ship.position.y + ddy) % H)
+            if dest in my_deposits:
+                deposit_arrivals.setdefault(dest, []).append((ship.halite_amount, ship, act))
+
+        delayed_ships: set = set()
+        for dest, arrivals in deposit_arrivals.items():
+            if len(arrivals) > 1:
+                arrivals.sort(key=lambda x: x[0], reverse=True)
+                for _, s, _ in arrivals[1:]:
+                    delayed_ships.add(s.id)
+
+        commands = []
+        dir_map = {'n': Direction.North, 's': Direction.South,
+                   'e': Direction.East,  'w': Direction.West}
+        for ship, action_idx in ship_resolved:
+            if ship.id in delayed_ships:
+                action_idx = ACTION_STAY
+            direction_str = ACTION_TO_DIR[action_idx]
             if direction_str == 'o':
                 commands.append(ship.stay_still())
             else:
-                dir_map = {
-                    'n': Direction.North,
-                    's': Direction.South,
-                    'e': Direction.East,
-                    'w': Direction.West,
-                }
                 commands.append(ship.move(dir_map[direction_str]))
 
         if _should_spawn(game, me):

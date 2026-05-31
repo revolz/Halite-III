@@ -37,6 +37,10 @@ from rl_features import (
     _nearest_deposit,
     ACTION_TO_DIR,
     ACTION_STAY,
+    ACTION_NORTH,
+    ACTION_SOUTH,
+    ACTION_EAST,
+    ACTION_WEST,
     ACTION_HOME,
     ACTION_RANDOM,
     N_SHIP_ACTIONS,
@@ -73,7 +77,7 @@ class HaliteEnv:
         home_scale:         float = 2.0,
         explore_scale:      float = 0.5,
         explore_window:     int   = 30,
-        collision_scale:    float = 50.0,
+        collision_scale:    float = 20.0,
     ):
         self.width           = width
         self.height          = height
@@ -257,8 +261,10 @@ class HaliteEnv:
         This is what the reward block must use so HOME reward fires on memory turns.
         """
         eng    = self.engine
-        tokens = []
+        W, H   = eng.width, eng.height
         intent_actions: Dict[int, int] = {}
+        resolved_prims: Dict[int, int] = {}
+
         for ship_id, action in ship_actions.items():
             if ship_id not in eng.player_entities[0]:
                 continue
@@ -274,17 +280,43 @@ class HaliteEnv:
                 action = self._home_dir(ship_id)
                 if action == ACTION_STAY:   # arrived at deposit — cancel home mode
                     self._homing_ships.discard(ship_id)
-            tokens.append(f"m {ship_id} {ACTION_TO_DIR[action]}")
+            resolved_prims[ship_id] = action
+
+        # Stagger homing ships: if multiple p0 ships would arrive at the same
+        # deposit cell this turn they'd collide.  Keep the heaviest-cargo ship
+        # moving; delay the rest (ACTION_STAY for this turn, retry next turn).
+        _dir_delta = {
+            ACTION_STAY: (0, 0), ACTION_NORTH: (0, -1), ACTION_SOUTH: (0, 1),
+            ACTION_EAST: (1, 0), ACTION_WEST: (-1, 0),
+        }
+        my_deposits = {eng.players[0]['factory']}
+        for _did, dx, dy in eng.players[0]['dropoffs']:
+            my_deposits.add((dx, dy))
+
+        deposit_arrivals: Dict[tuple, list] = {}
+        for sid, prim in resolved_prims.items():
+            sx, sy = eng.player_entities[0][sid]
+            ddx, ddy = _dir_delta[prim]
+            dest = ((sx + ddx) % W, (sy + ddy) % H)
+            if dest in my_deposits:
+                deposit_arrivals.setdefault(dest, []).append(
+                    (eng.entities[sid]['cargo'], sid)
+                )
+
+        for dest, arrivals in deposit_arrivals.items():
+            if len(arrivals) > 1:
+                arrivals.sort(reverse=True)   # heaviest cargo gets priority
+                for _, sid in arrivals[1:]:
+                    resolved_prims[sid] = ACTION_STAY   # wait one turn
+
+        tokens = [f"m {sid} {ACTION_TO_DIR[prim]}" for sid, prim in resolved_prims.items()]
         if spawn and eng.players[0]['energy'] >= SHIP_COST:
-            fx, fy = eng.players[0]['factory']
-            if (fx, fy) not in set(eng.player_entities[0].values()):
-                tokens.append('g')
+            tokens.append('g')
         return ' '.join(tokens), intent_actions
 
     def _home_dir(self, ship_id: int) -> int:
         """Return the primitive action (0–4) that moves one step toward the
         nearest deposit structure (factory or dropoff)."""
-        from rl_features import ACTION_NORTH, ACTION_SOUTH, ACTION_EAST, ACTION_WEST, ACTION_STAY
         eng    = self.engine
         sx, sy = eng.player_entities[0][ship_id]
         nx, ny = _nearest_deposit(sx, sy, eng, 0)
