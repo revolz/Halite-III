@@ -328,8 +328,25 @@ def build_display_states(replay: dict) -> List[dict]:
         if next_turn < len(full_frames):
             raw_ents = full_frames[next_turn].get('entities', {})
         else:
-            # Final turn: use this frame's entities as best approximation
-            raw_ents = frame.get('entities', {})
+            # Final turn: no next frame exists. Start from this frame's entities
+            # and remove any ships destroyed in shipwreck events this turn.
+            destroyed_ids: set = set()
+            for evt in frame.get('events', []):
+                if evt.get('type') == 'shipwreck':
+                    for s in evt.get('ships', []):
+                        if isinstance(s, int):
+                            destroyed_ids.add(s)
+                        elif isinstance(s, dict) and 'id' in s:
+                            destroyed_ids.add(int(s['id']))
+            if destroyed_ids:
+                raw_ents = {}
+                for pid_str, sdict in frame.get('entities', {}).items():
+                    raw_ents[pid_str] = {
+                        sid_str: sdata for sid_str, sdata in sdict.items()
+                        if int(sid_str) not in destroyed_ids
+                    }
+            else:
+                raw_ents = frame.get('entities', {})
 
         ships: Dict[int, dict] = {}
         for pid_str, ship_dict in raw_ents.items():
