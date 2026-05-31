@@ -46,7 +46,7 @@ DEFAULTS = dict(
     height              = 32,
     num_players         = 2,
     episodes            = 2000,
-    gamma               = 0.99,
+    gamma               = 0.999,
     lam                 = 0.95,    # GAE lambda
     clip_eps            = 0.2,
     vf_coef             = 0.5,
@@ -63,7 +63,7 @@ DEFAULTS = dict(
     resume              = None,    # path to .pt file to resume from
     start_episode       = 1,       # episode number to start counting from (use with --resume)
     opponent_policy     = 'idle',  # 'idle' for early training, 'greedy' for harder challenge
-    collision_penalty   = 10.0,    # penalty per ship lost (keep low to avoid discouraging movement)
+    death_penalty_scale = 0.5,     # weight on cargo lost when a ship dies (proportional, not flat)
     cargo_reward_scale  = 0.3,     # weight on per-turn cargo-gained reward (dense signal)
 )
 
@@ -324,13 +324,13 @@ class PPOTrainer:
         os.makedirs(cfg['checkpoint_dir'], exist_ok=True)
 
         env = HaliteEnv(
-            width              = cfg['width'],
-            height             = cfg['height'],
-            num_players        = cfg['num_players'],
-            seed               = cfg['seed'],
-            opponent_policy    = cfg.get('opponent_policy', 'idle'),
-            collision_penalty  = cfg.get('collision_penalty', 10.0),
-            cargo_reward_scale = cfg.get('cargo_reward_scale', 0.3),
+            width               = cfg['width'],
+            height              = cfg['height'],
+            num_players         = cfg['num_players'],
+            seed                = cfg['seed'],
+            opponent_policy     = cfg.get('opponent_policy', 'idle'),
+            death_penalty_scale = cfg.get('death_penalty_scale', 0.5),
+            cargo_reward_scale  = cfg.get('cargo_reward_scale', 0.3),
         )
 
         start_ep   = cfg.get('start_episode', 1)
