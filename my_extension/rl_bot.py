@@ -108,9 +108,24 @@ def extract_spatial_hlt(
             for s in player.get_ships():
                 opp_ships_by_pos[s.position] = s
 
+    # Pre-compute 1-step reachable sets for danger-zone channels
+    _adj = [(0, 0), (0, -1), (0, 1), (1, 0), (-1, 0)]
+
+    enemy_reachable: set = set()
+    friendly_reachable: set = set()
+
+    for pid2, player in game.players.items():
+        for s in player.get_ships():
+            ex, ey = s.position.x, s.position.y
+            if pid2 != me_id:
+                for ddx, ddy in _adj:
+                    enemy_reachable.add(Position((ex + ddx) % W, (ey + ddy) % H))
+            elif s.position != ship_pos:
+                for ddx, ddy in _adj:
+                    friendly_reachable.add(Position((ex + ddx) % W, (ey + ddy) % H))
+
     sx, sy    = ship_pos.x, ship_pos.y
     spatial   = np.zeros((WINDOW_SIZE, WINDOW_SIZE, N_SPATIAL_CHANNELS), dtype=np.float32)
-    is_insp   = _inspired(ship_pos, game, me_id)
 
     for dy_off in range(-half, half + 1):
         for dx_off in range(-half, half + 1):
@@ -130,7 +145,10 @@ def extract_spatial_hlt(
                 if _inspired(pos, game, me_id):
                     spatial[wy, wx, 6] = 1.0
             elif pos in opp_ships_by_pos:
+                s = opp_ships_by_pos[pos]
                 spatial[wy, wx, 3] = 1.0
+                # Ch 8: enemy cargo (0=kamikaze threat, 1=wants to go home)
+                spatial[wy, wx, 8] = s.halite_amount / MAX_HALITE
 
             if pos in my_struct_pos:
                 spatial[wy, wx, 4] = 1.0 if pos == me.shipyard.position else 0.5
@@ -140,6 +158,11 @@ def extract_spatial_hlt(
             # Per-cell distance to nearest own deposit
             min_d = min(gmap.calculate_distance(pos, dp) for dp in my_deposits)
             spatial[wy, wx, 7] = 1.0 - (min_d / max_d)
+
+            if pos in enemy_reachable:
+                spatial[wy, wx, 9] = 1.0
+            if pos in friendly_reachable:
+                spatial[wy, wx, 10] = 1.0
 
     return spatial
 
@@ -176,6 +199,18 @@ def extract_scalars_hlt(
     opp_ships  = sum(len(list(p.get_ships())) for pid, p in game.players.items()
                      if pid != me_id)
 
+    # Proximity danger: count ships within 2 steps
+    enemy_near    = 0
+    friendly_near = 0
+    for pid2, player in game.players.items():
+        for s in player.get_ships():
+            d = gmap.calculate_distance(ship.position, s.position)
+            if d <= 2:
+                if pid2 != me_id:
+                    enemy_near += 1
+                elif s.id != ship.id:
+                    friendly_near += 1
+
     return np.array([
         turns_left / MAX_TURNS,
         me.halite_amount / MAX_HALITE,
@@ -188,6 +223,8 @@ def extract_scalars_hlt(
         ddy / H,
         return_urgency,
         turns_slack,
+        enemy_near    / 10.0,
+        friendly_near / 10.0,
     ], dtype=np.float32)
 
 
