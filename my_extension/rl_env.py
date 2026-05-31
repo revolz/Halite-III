@@ -268,6 +268,10 @@ class HaliteEnv:
         for ship_id, action in ship_actions.items():
             if ship_id not in eng.player_entities[0]:
                 continue
+            # Auto-trigger home if cargo exceeds 60% capacity
+            cargo = eng.entities[ship_id]['cargo']
+            if cargo >= MAX_HALITE * 0.6:
+                self._homing_ships.add(ship_id)
             # Home memory: if this ship is committed to returning, keep it going
             if ship_id in self._homing_ships:
                 action = ACTION_HOME

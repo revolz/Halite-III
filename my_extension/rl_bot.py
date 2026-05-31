@@ -298,6 +298,9 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
             else:
                 action_idx, _, _ = model.select_action(sp_t, sc_t)
 
+            # Auto-trigger home if cargo exceeds 60% capacity
+            if ship.halite_amount >= constants.MAX_ENERGY * 0.6:
+                homing_ships.add(ship.id)
             # Home memory: if this ship committed to going home, keep it going
             if ship.id in homing_ships:
                 action_idx = ACTION_HOME
