@@ -33,9 +33,13 @@ from rl_features import (
     extract_spatial_from_engine,
     extract_scalars_from_engine,
     torus_dist,
-    ACTION_TO_DIR,
-    N_SHIP_ACTIONS,
+    torus_delta,
     _nearest_deposit,
+    ACTION_TO_DIR,
+    ACTION_STAY,
+    ACTION_HOME,
+    ACTION_RANDOM,
+    N_SHIP_ACTIONS,
 )
 
 # ---------------------------------------------------------------------------
@@ -65,18 +69,20 @@ class HaliteEnv:
         num_players:        int  = 2,
         seed:               Optional[int] = None,
         opponent_policy:    str  = 'greedy',
-        death_penalty_scale: float = 0.5,
-        cargo_reward_scale: float = 0.3,
-        return_reward_scale: float = 0.05,
+        stay_scale:         float = 1.0,
+        home_scale:         float = 2.0,
+        explore_scale:      float = 0.5,
+        explore_window:     int   = 30,
     ):
-        self.width               = width
-        self.height              = height
-        self.num_players         = num_players
-        self._seed               = seed
-        self.opponent_policy     = opponent_policy
-        self.death_penalty_scale = death_penalty_scale
-        self.cargo_reward_scale  = cargo_reward_scale
-        self.return_reward_scale = return_reward_scale
+        self.width           = width
+        self.height          = height
+        self.num_players     = num_players
+        self._seed           = seed
+        self.opponent_policy = opponent_policy
+        self.stay_scale      = stay_scale
+        self.home_scale      = home_scale
+        self.explore_scale   = explore_scale
+        self.explore_window  = explore_window
         self.engine: Optional[HaliteEngine] = None
 
     # ------------------------------------------------------------------
@@ -94,12 +100,11 @@ class HaliteEnv:
 
         # Track deposited halite across steps
         self._prev_deposited = {pid: 0 for pid in self.engine.players}
-        # Track cargo per ship for dense mining reward
+        # Track cargo per ship for per-action shaping (snapshot at start of each turn)
         self._prev_cargo: Dict[int, int] = {}
-        # Track each ship's distance to nearest deposit for approach shaping
-        self._prev_dists: Dict[int, float] = {
-            sid: 0.0 for sid in self.engine.player_entities[0]
-        }
+        # Track when bank last grew (for explore bonus)
+        self._last_deposit_turn: int = 0
+        self._bank_at_check: int = 0
 
         # Pre-compute inspiration for turn-0 state (no ships → no-op but correct)
         self.engine._update_inspiration()
@@ -160,74 +165,46 @@ class HaliteEnv:
         # Reward
         # ------------------------------------------------------------------
 
+        # Snapshot cargo BEFORE overwriting _prev_cargo (gives cargo at
+        # the time each ship decided its action this turn).
+        turn_start_cargo = self._prev_cargo
+        self._prev_cargo = {sid: eng.entities[sid]['cargo']
+                            for sid in eng.player_entities[0]}
+
         # 1. Deposit reward: halite actually banked this turn (primary signal).
         deposited_now  = eng._total_deposited.get(0, 0)
         deposit_reward = float(deposited_now - self._prev_deposited[0])
         self._prev_deposited[0] = deposited_now
 
-        # 2. Cargo (mining) reward: partial credit for halite collected this
-        #    turn.  Scaled < 1.0 because cargo is only *potential* — it must
-        #    still be deposited to count toward the real objective.
-        cargo_gained = 0.0
-        for sid in eng.player_entities[0]:
-            cur  = eng.entities[sid]['cargo']
-            prev = self._prev_cargo.get(sid, 0)
-            if cur > prev:
-                cargo_gained += cur - prev
+        # Update bank-stuck tracker
+        if deposited_now > self._bank_at_check:
+            self._last_deposit_turn = eng.turn
+            self._bank_at_check     = deposited_now
+        bank_stuck = (eng.turn - self._last_deposit_turn) >= self.explore_window
 
-        # Snapshot cargo BEFORE overwriting _prev_cargo so the death penalty
-        # below can look up the cargo each ship was carrying when it died.
-        turn_start_cargo = self._prev_cargo
-        self._prev_cargo = {sid: eng.entities[sid]['cargo']
-                            for sid in eng.player_entities[0]}
+        # 2. Per-action state-based shaping.
+        #    STAY  → reward scales with empty cargo  (encourage mining when empty)
+        #    HOME  → reward scales with full cargo   (encourage returning when full)
+        #    RANDOM → exploration bonus when bank is stuck
+        action_reward = 0.0
+        n_acting = max(1, len(ship_actions))
+        for sid, action in ship_actions.items():
+            if sid not in eng.player_entities[0] and sid not in pre_ship_owners:
+                continue
+            cargo_pre = float(turn_start_cargo.get(sid, 0)) / MAX_HALITE  # 0–1
+            if action == ACTION_STAY:
+                action_reward += self.stay_scale * max(0.0, 1.0 - cargo_pre)
+            elif action == ACTION_HOME:
+                action_reward += self.home_scale * cargo_pre
+            elif action == ACTION_RANDOM and bank_stuck:
+                action_reward += self.explore_scale
 
-        # 3. Death penalty: proportional to the cargo actually lost.
-        #    A ship dying with 0 cargo is barely penalised; dying with 900
-        #    halite is penalised heavily.  Using `death_penalty_scale × cargo`
-        #    (not a flat constant) avoids the failure mode where the bot learns
-        #    to sit still and never risk movement.
-        cargo_lost = 0.0
-        for ev in eng._current_events:
-            if ev['type'] == 'shipwreck':
-                for sid in ev['ships']:
-                    if pre_ship_owners.get(sid) == 0:
-                        cargo_lost += turn_start_cargo.get(sid, 0)
-
-        reward = (deposit_reward
-                  + self.cargo_reward_scale * cargo_gained
-                  - self.death_penalty_scale * cargo_lost)
-
-        # 4. Return-shaping reward: credit ships for moving toward the nearest
-        #    deposit structure when holding cargo.  Positive when the ship
-        #    moved closer; negative when it moved farther away.  Magnitude
-        #    scales with cargo so the signal is only strong enough to overcome
-        #    mining incentives when the ship is nearly full.
-        if self.return_reward_scale > 0:
-            approach_reward = 0.0
-            new_dists: Dict[int, float] = {}
-            for sid, (sx, sy) in eng.player_entities[0].items():
-                nx, ny = _nearest_deposit(sx, sy, eng, 0)
-                new_dists[sid] = float(torus_dist(sx, sy, nx, ny, eng.width, eng.height))
-                prev_d  = self._prev_dists.get(sid, 0.0)
-                cargo_p = float(turn_start_cargo.get(sid, 0))
-                if cargo_p > 0:
-                    approach_reward += cargo_p * (prev_d - new_dists[sid]) * self.return_reward_scale
-            self._prev_dists = new_dists
-            reward += approach_reward
+        reward = deposit_reward + action_reward / n_acting
 
         # ------------------------------------------------------------------
         # Done
         # ------------------------------------------------------------------
         done = (eng.turn >= eng.max_turns) or eng._game_ended()
-
-        if done:
-            # Terminal bonus: modest reward proportional to total halite
-            # banked over the whole game.  This anchors the critic's
-            # long-range value estimates to the actual episode outcome so
-            # that early strategic actions (spawn, dropoff) can be properly
-            # credited through GAE back-propagation.
-            total_deposited = eng._total_deposited.get(0, 0)
-            reward += total_deposited * 0.01
 
         # ------------------------------------------------------------------
         # Update inspiration for the NEXT step's observation
@@ -255,10 +232,30 @@ class HaliteEnv:
         for ship_id, action in ship_actions.items():
             if ship_id not in eng.player_entities[0]:
                 continue
+            # Resolve meta-actions to primitive 0–4
+            if action == ACTION_RANDOM:
+                action = random.randint(0, 4)
+            elif action == ACTION_HOME:
+                action = self._home_dir(ship_id)
             tokens.append(f"m {ship_id} {ACTION_TO_DIR[action]}")
         if spawn and eng.players[0]['energy'] >= SHIP_COST:
             tokens.append('g')
         return ' '.join(tokens)
+
+    def _home_dir(self, ship_id: int) -> int:
+        """Return the primitive action (0–4) that moves one step toward the
+        nearest deposit structure (factory or dropoff)."""
+        from rl_features import ACTION_NORTH, ACTION_SOUTH, ACTION_EAST, ACTION_WEST, ACTION_STAY
+        eng    = self.engine
+        sx, sy = eng.player_entities[0][ship_id]
+        nx, ny = _nearest_deposit(sx, sy, eng, 0)
+        if (sx, sy) == (nx, ny):
+            return ACTION_STAY
+        dx, dy = torus_delta(sx, sy, nx, ny, eng.width, eng.height)
+        if abs(dx) >= abs(dy):
+            return ACTION_EAST if dx > 0 else ACTION_WEST
+        else:
+            return ACTION_NORTH if dy < 0 else ACTION_SOUTH
 
     def _opponent_command(self, pid: int) -> str:
         eng    = self.engine

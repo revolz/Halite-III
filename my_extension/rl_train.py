@@ -64,9 +64,10 @@ DEFAULTS = dict(
     resume              = None,    # path to .pt file to resume from
     start_episode       = 1,       # episode number to start counting from (use with --resume)
     opponent_policy     = 'idle',  # 'idle' for early training, 'greedy' for harder challenge
-    death_penalty_scale = 0.5,     # weight on cargo lost when a ship dies (proportional, not flat)
-    cargo_reward_scale  = 0.3,     # weight on per-turn cargo-gained reward (dense signal)
-    return_reward_scale = 0.05,    # weight on approach-toward-deposit shaping reward
+    stay_scale          = 1.0,     # reward for STAY action scaled by (1 - cargo/MAX)
+    home_scale          = 2.0,     # reward for HOME action scaled by (cargo/MAX)
+    explore_scale       = 0.5,     # reward for RANDOM action when bank is stuck
+    explore_window      = 30,      # turns without a deposit before bank is "stuck"
 )
 
 
@@ -340,14 +341,15 @@ class PPOTrainer:
         os.makedirs(cfg['checkpoint_dir'], exist_ok=True)
 
         env = HaliteEnv(
-            width               = cfg['width'],
-            height              = cfg['height'],
-            num_players         = cfg['num_players'],
-            seed                = cfg['seed'],
-            opponent_policy     = cfg.get('opponent_policy', 'idle'),
-            death_penalty_scale = cfg.get('death_penalty_scale', 0.5),
-            cargo_reward_scale  = cfg.get('cargo_reward_scale', 0.3),
-            return_reward_scale = cfg.get('return_reward_scale', 0.05),
+            width            = cfg['width'],
+            height           = cfg['height'],
+            num_players      = cfg['num_players'],
+            seed             = cfg['seed'],
+            opponent_policy  = cfg.get('opponent_policy', 'idle'),
+            stay_scale       = cfg.get('stay_scale',    1.0),
+            home_scale       = cfg.get('home_scale',    2.0),
+            explore_scale    = cfg.get('explore_scale', 0.5),
+            explore_window   = cfg.get('explore_window', 30),
         )
 
         start_ep   = cfg.get('start_episode', 1)
