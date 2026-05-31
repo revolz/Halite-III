@@ -323,58 +323,62 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
 
             ship_resolved.append((ship, action_idx))
 
-        # Safety override pass: prevent ships moving into collisions.
-        # (a) Destination in enemy threat zone (current cell + 4 neighbors) → STAY
-        #     Catches both "enemy stays" and "enemy moves into same cell" cases.
-        # (b) Multiple friendlies target same cell → heaviest keeps going, others STAY
+        # ── Safety override: 4-phase collision prevention ────────────────────
         W, H = gmap.width, gmap.height
         _dir_delta = {
             ACTION_STAY:  (0, 0),  ACTION_NORTH: (0, -1), ACTION_SOUTH: (0, 1),
             ACTION_EAST:  (1, 0),  ACTION_WEST:  (-1, 0),
         }
-        _neighbor_deltas = [(0, 0), (0, -1), (0, 1), (1, 0), (-1, 0)]
+        # Cardinal deltas paired with their action index.
+        _cardinal = [(0, -1, ACTION_NORTH), (1, 0, ACTION_EAST),
+                     (0,  1, ACTION_SOUTH), (-1, 0, ACTION_WEST)]
 
-        # Build threat zone: every cell an enemy occupies or could reach in one step
+        # Phase 1 — Build enemy threat zone.
+        # Covers "enemy stays" AND "enemy moves adjacent": current + 4 neighbours.
         enemy_threat_zone: set = set()
         for pid, player in game.players.items():
             if pid != me.id:
                 for s in player.get_ships():
                     ex, ey = s.position.x, s.position.y
-                    for ddx, ddy in _neighbor_deltas:
-                        enemy_threat_zone.add(Position(
-                            (ex + ddx) % W, (ey + ddy) % H
-                        ))
+                    enemy_threat_zone.add(Position(ex, ey))
+                    for ddx, ddy, _ in _cardinal:
+                        enemy_threat_zone.add(Position((ex+ddx)%W, (ey+ddy)%H))
 
-        # Compute destinations
-        dest_of: dict = {}   # ship.id → Position
+        # Phase 2 — Compute initial destinations.
+        dest_of: dict = {}
         for ship, act in ship_resolved:
             ddx, ddy = _dir_delta[act]
-            dest_of[ship.id] = Position(
-                (ship.position.x + ddx) % W,
-                (ship.position.y + ddy) % H
-            )
+            dest_of[ship.id] = Position((ship.position.x+ddx)%W, (ship.position.y+ddy)%H)
 
-        # (a) Override ships heading into enemy threat zone
+        # Phase 3a — Enemy avoidance (MOVE): ships heading into threat zone → STAY.
         overridden_act = {ship.id: act for ship, act in ship_resolved}
-        for ship, act in ship_resolved:
+        for ship, _ in ship_resolved:
             if dest_of[ship.id] in enemy_threat_zone:
                 overridden_act[ship.id] = ACTION_STAY
                 dest_of[ship.id] = ship.position
 
-        # (b) Friendly collision resolution: no two ships may share a final cell.
-        # Rules (in priority order):
-        #   1. A ship already AT a cell (stayer: dest == current_pos) owns that cell.
-        #      Any mover trying to enter it is forced to STAY.
-        #   2. When multiple ships all MOVE to the same unoccupied cell (no stayer),
-        #      the heaviest wins; the rest are forced to STAY.
-        # Iterates until stable because a forced STAY creates a new stayer that can
-        # block other ships aiming for that same cell in the next pass.
+        # Phase 3b — Enemy avoidance (ESCAPE): a ship already at a threat-zone cell
+        # risks collision if an adjacent enemy moves onto it while the ship stays.
+        # Try to move to any safe adjacent cell rather than sitting in the danger zone.
         ship_pos = {ship.id: ship.position for ship, _ in ship_resolved}
+        for ship, _ in ship_resolved:
+            if overridden_act[ship.id] == ACTION_STAY and ship.position in enemy_threat_zone:
+                for ddx, ddy, esc_act in _cardinal:
+                    esc = Position((ship.position.x+ddx)%W, (ship.position.y+ddy)%H)
+                    if esc not in enemy_threat_zone:
+                        overridden_act[ship.id] = esc_act
+                        dest_of[ship.id] = esc
+                        break   # first safe direction wins; cascade handles friendlies
+
+        # Phase 4 — Friendly collision resolution: no two ships may share a final cell.
+        # Rules (applied via cascade until stable):
+        #   Stayer (dest == current_pos) owns that cell — every mover is forced STAY.
+        #   Multiple movers to same empty cell → heaviest mover wins, rest STAY.
         for _ in range(len(ship_resolved)):
             pos_occupants: dict = {}
             for ship, _ in ship_resolved:
-                fp = dest_of[ship.id]
-                pos_occupants.setdefault(fp, []).append((ship.halite_amount, ship.id))
+                pos_occupants.setdefault(dest_of[ship.id], []).append(
+                    (ship.halite_amount, ship.id))
             changed = False
             for dest, occupants in pos_occupants.items():
                 if len(occupants) <= 1:
@@ -382,13 +386,11 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
                 stayers = [(c, sid) for c, sid in occupants if dest == ship_pos[sid]]
                 movers  = [(c, sid) for c, sid in occupants if dest != ship_pos[sid]]
                 if stayers:
-                    # Cell is already occupied — every mover must stay put.
                     for _, sid in movers:
                         overridden_act[sid] = ACTION_STAY
                         dest_of[sid] = ship_pos[sid]
                         changed = True
                 elif len(movers) > 1:
-                    # All movers compete for an empty cell — heaviest wins.
                     movers.sort(reverse=True)
                     for _, sid in movers[1:]:
                         overridden_act[sid] = ACTION_STAY
