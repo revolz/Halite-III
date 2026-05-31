@@ -122,7 +122,7 @@ python rl_train.py --resume checkpoints\model_ep100.pt --start-episode 101 --epi
 | `--resume` | *(none)* | Path to `.pt` file to resume from |
 | `--start-episode` | 1 | Episode counter start (use with `--resume`) |
 | `--opponent-policy` | `idle` | `idle` (no opponent moves) or `greedy` (scripted heuristic bot) |
-| `--collision-penalty` | 10.0 | Penalty per ship lost in collision (lower = less risk-averse) |
+| `--death-penalty-scale` | 0.5 | Multiplier on cargo lost when a ship dies (proportional, not flat) |
 | `--cargo-reward-scale` | 0.3 | Weight on per-turn cargo-gain reward (dense learning signal) |
 | `--width` / `--height` | 32 | Map dimensions |
 | `--lr` | 3e-4 | Learning rate |
@@ -224,7 +224,7 @@ python run_game.py \
 
 | Reward range | Meaning |
 |---|---|
-| Consistently negative (e.g. −200) | Bot is losing ships every game; not learning to mine |
-| Near 0 | Bot is avoiding collisions but not mining much yet |
+| Consistently negative (e.g. −200) | Bot is losing loaded ships; `death_penalty_scale` may be too high |
+| Near 0 | Bot is avoiding deaths but not mining much yet |
 | Positive and rising | Bot is collecting and depositing halite — learning is working |
 | Positive then plateauing | Normal; switch to greedy opponent for harder challenge |

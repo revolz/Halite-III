@@ -48,8 +48,12 @@ class HaliteEnv:
     Observation  {ship_id: (spatial float32[W,W,C], scalars float32[S])}
     Action       {ship_id: int in [0, N_SHIP_ACTIONS)}
                    0=Stay/Mine  1=N  2=E  3=S  4=W
-    Reward       halite deposited by player 0 this turn
-                 minus 50 × number of player-0 ships destroyed in collisions
+    Reward       (per step)
+                   + halite deposited this turn          (direct objective progress)
+                   + cargo_reward_scale × halite mined  (partial credit for potential)
+                   − death_penalty_scale × cargo lost   (proportional to actual loss)
+                 (terminal bonus)
+                   + 0.01 × total halite deposited this game
     Done         turn >= max_turns  or  engine._game_ended()
     """
 
@@ -60,7 +64,7 @@ class HaliteEnv:
         num_players:        int  = 2,
         seed:               Optional[int] = None,
         opponent_policy:    str  = 'greedy',
-        collision_penalty:  float = 10.0,
+        death_penalty_scale: float = 0.5,
         cargo_reward_scale: float = 0.3,
     ):
         self.width               = width
@@ -68,7 +72,7 @@ class HaliteEnv:
         self.num_players         = num_players
         self._seed               = seed
         self.opponent_policy     = opponent_policy
-        self.collision_penalty   = collision_penalty
+        self.death_penalty_scale = death_penalty_scale
         self.cargo_reward_scale  = cargo_reward_scale
         self.engine: Optional[HaliteEngine] = None
 
@@ -149,33 +153,42 @@ class HaliteEnv:
         # Reward
         # ------------------------------------------------------------------
 
-        # 1. Deposit reward: halite actually banked this turn (primary signal)
+        # 1. Deposit reward: halite actually banked this turn (primary signal).
         deposited_now  = eng._total_deposited.get(0, 0)
         deposit_reward = float(deposited_now - self._prev_deposited[0])
         self._prev_deposited[0] = deposited_now
 
-        # 2. Cargo (mining) reward: sum of cargo gained by all P0 ships this turn
-        #    This dense signal teaches the bot that collecting halite is good,
-        #    even before it learns to return home and deposit.
+        # 2. Cargo (mining) reward: partial credit for halite collected this
+        #    turn.  Scaled < 1.0 because cargo is only *potential* — it must
+        #    still be deposited to count toward the real objective.
         cargo_gained = 0.0
-        for sid, (_, _) in eng.player_entities[0].items():
+        for sid in eng.player_entities[0]:
             cur  = eng.entities[sid]['cargo']
             prev = self._prev_cargo.get(sid, 0)
             if cur > prev:
                 cargo_gained += cur - prev
+
+        # Snapshot cargo BEFORE overwriting _prev_cargo so the death penalty
+        # below can look up the cargo each ship was carrying when it died.
+        turn_start_cargo = self._prev_cargo
         self._prev_cargo = {sid: eng.entities[sid]['cargo']
                             for sid in eng.player_entities[0]}
 
-        # 3. Collision penalty (intentionally mild — collisions are bad but
-        #    a heavy penalty causes the bot to never move)
-        collision_loss = 0.0
+        # 3. Death penalty: proportional to the cargo actually lost.
+        #    A ship dying with 0 cargo is barely penalised; dying with 900
+        #    halite is penalised heavily.  Using `death_penalty_scale × cargo`
+        #    (not a flat constant) avoids the failure mode where the bot learns
+        #    to sit still and never risk movement.
+        cargo_lost = 0.0
         for ev in eng._current_events:
             if ev['type'] == 'shipwreck':
                 for sid in ev['ships']:
                     if pre_ship_owners.get(sid) == 0:
-                        collision_loss += self.collision_penalty
+                        cargo_lost += turn_start_cargo.get(sid, 0)
 
-        reward = deposit_reward + self.cargo_reward_scale * cargo_gained - collision_loss
+        reward = (deposit_reward
+                  + self.cargo_reward_scale * cargo_gained
+                  - self.death_penalty_scale * cargo_lost)
 
         # ------------------------------------------------------------------
         # Done
@@ -183,11 +196,13 @@ class HaliteEnv:
         done = (eng.turn >= eng.max_turns) or eng._game_ended()
 
         if done:
-            # Small terminal penalty for undeposited cargo
-            carried = sum(
-                e['cargo'] for e in eng.entities.values() if e['owner'] == 0
-            )
-            reward -= carried * 0.05
+            # Terminal bonus: modest reward proportional to total halite
+            # banked over the whole game.  This anchors the critic's
+            # long-range value estimates to the actual episode outcome so
+            # that early strategic actions (spawn, dropoff) can be properly
+            # credited through GAE back-propagation.
+            total_deposited = eng._total_deposited.get(0, 0)
+            reward += total_deposited * 0.01
 
         # ------------------------------------------------------------------
         # Update inspiration for the NEXT step's observation
