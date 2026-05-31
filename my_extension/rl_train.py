@@ -50,7 +50,7 @@ DEFAULTS = dict(
     lam                 = 0.95,    # GAE lambda
     clip_eps            = 0.2,
     vf_coef             = 0.5,
-    ent_coef            = 0.05,    # entropy bonus weight — higher = more exploration (was 0.01)
+    ent_coef            = 0.15,    # entropy bonus weight — higher = more exploration (was 0.05)
     ent_floor           = 0.5,     # nats — hard minimum entropy; prevents total policy collapse
     lr                  = 3e-4,
     n_epochs            = 4,
@@ -363,21 +363,22 @@ class PPOTrainer:
         log_file   = open(log_path, 'a', newline='')
         log_writer = csv.writer(log_file)
         if not log_exists:
-            log_writer.writerow(['episode', 'reward', 'avg100_reward', 'mean_entropy', 'elapsed_sec'])
+            log_writer.writerow(['episode', 'reward', 'avg100_reward', 'deposited', 'mean_entropy', 'elapsed_sec'])
 
         for ep in range(start_ep, total_eps + 1):
             trajectories, ep_reward = self._collect_episode(env)
+            deposited = env.engine._total_deposited.get(0, 0)
             mean_ent = self._ppo_update(trajectories)
             self._episode_rewards.append(ep_reward)
             mean_r  = sum(self._episode_rewards) / len(self._episode_rewards)
             elapsed = time.time() - start_time
 
-            log_writer.writerow([ep, f'{ep_reward:.2f}', f'{mean_r:.2f}', f'{mean_ent:.3f}', f'{elapsed:.1f}'])
+            log_writer.writerow([ep, f'{ep_reward:.2f}', f'{mean_r:.2f}', deposited, f'{mean_ent:.3f}', f'{elapsed:.1f}'])
             log_file.flush()
 
             if ep % 10 == 0:
                 print(f"Episode {ep:5d} | reward {ep_reward:8.1f} | "
-                      f"avg100 {mean_r:8.1f} | entropy {mean_ent:.3f} | {elapsed:.0f}s")
+                      f"avg100 {mean_r:8.1f} | deposited {deposited:6d} | entropy {mean_ent:.3f} | {elapsed:.0f}s")
 
             if ep % cfg['checkpoint_interval'] == 0:
                 path = os.path.join(cfg['checkpoint_dir'], f'model_ep{ep}.pt')
