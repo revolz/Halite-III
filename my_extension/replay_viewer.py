@@ -425,7 +425,13 @@ def _draw_event_rings(img: Image.Image, events: list, cell_size: int,
             color_rgb = (255, 255, 255)
         else:
             ships_data = evt.get('ships', [])
-            owners = {s.get('owner') for s in ships_data if 'owner' in s}
+            # ships_data may be [{id, owner}, ...] or [int, ...] (legacy)
+            owners = set()
+            for s in ships_data:
+                if isinstance(s, dict):
+                    if 'owner' in s:
+                        owners.add(s['owner'])
+                # integer ship IDs carry no owner info; treat as unknown
             if len(owners) != 1:
                 color_rgb = (255, 255, 255)
             else:
