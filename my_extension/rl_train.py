@@ -69,7 +69,7 @@ DEFAULTS = dict(
     home_scale          = 2.0,     # reward for HOME action scaled by (cargo/MAX)
     explore_scale       = 0.5,     # reward for RANDOM action when bank is stuck
     explore_window      = 30,      # turns without a deposit before bank is "stuck"
-    collision_scale     = 50.0,    # penalty per p0 ship destroyed; scales with cargo
+    collision_scale     = 20.0,    # penalty per p0 ship destroyed; scales with cargo (was 50, reduced for stability)
 )
 
 
