@@ -149,17 +149,22 @@ Open `checkpoints\training_log.csv` in Excel, or tail it in a second terminal:
 while ($true) { Get-Content checkpoints\training_log.csv | Select-Object -Last 5; Start-Sleep 10 }
 ```
 
-Columns: `episode`, `reward`, `avg100_reward`, `mean_entropy`, `elapsed_sec`
+Columns: `episode`, `reward`, `avg100_reward`, `deposited`, `mean_entropy`, `elapsed_sec`
+
+- **`deposited`** — raw halite actually banked this episode (ignores reward formula). This is the clearest measure of real performance.
+- **`reward`** — shaped reward (deposit + action bonuses). Use for training trend; not directly comparable to halite.
 
 ### How to read the entropy column
 
+With 7 actions, max entropy = ln(7) ≈ 1.946 nats.
+
 | Entropy value | What it means | Action |
 |---|---|---|
-| ~1.61 nats | Perfectly uniform — all 5 actions equally likely | Normal at start |
-| 1.0–1.4 nats | Healthy exploration — policy has preferences but still tries things | Good |
+| ~1.95 nats | Perfectly uniform — all 7 actions equally likely | Normal at start |
+| 1.0–1.6 nats | Healthy exploration — policy has preferences but still tries things | Good |
 | 0.5–1.0 nats | Moderate convergence — learning is working | Good |
-| < 0.5 nats | Warning: policy is converging hard on a few actions | Watch closely |
-| < 0.2 nats | Collapse — bot probably always does same action | Retrain with higher `--ent-coef` |
+| < 0.5 nats | Warning: policy converging hard on a few actions | Watch closely |
+| 0.000 nats | **Total collapse** — always picks same action (seen in replay as "always east") | Retrain with higher `--ent-coef` |
 
 ---
 
