@@ -313,34 +313,54 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
 
             ship_resolved.append((ship, action_idx))
 
-        # Stagger homing ships: if multiple ships would arrive at the same
-        # deposit cell this turn they'd collide. Heaviest cargo gets priority.
+        # Safety override pass: prevent ships moving into collisions.
+        # (a) Enemy at destination (current position) → STAY
+        # (b) Multiple friendlies target same cell → heaviest keeps going, others STAY
         W, H = gmap.width, gmap.height
-        my_deposits = {me.shipyard.position} | {d.position for d in me.get_dropoffs()}
         _dir_delta = {
             ACTION_STAY:  (0, 0),  ACTION_NORTH: (0, -1), ACTION_SOUTH: (0, 1),
             ACTION_EAST:  (1, 0),  ACTION_WEST:  (-1, 0),
         }
-        deposit_arrivals: dict = {}
+
+        enemy_positions: set = set()
+        for pid, player in game.players.items():
+            if pid != me.id:
+                for s in player.get_ships():
+                    enemy_positions.add(s.position)
+
+        # Compute destinations
+        dest_of: dict = {}   # ship.id → Position
         for ship, act in ship_resolved:
             ddx, ddy = _dir_delta[act]
-            dest = Position((ship.position.x + ddx) % W, (ship.position.y + ddy) % H)
-            if dest in my_deposits:
-                deposit_arrivals.setdefault(dest, []).append((ship.halite_amount, ship, act))
+            dest_of[ship.id] = Position(
+                (ship.position.x + ddx) % W,
+                (ship.position.y + ddy) % H
+            )
 
-        delayed_ships: set = set()
-        for dest, arrivals in deposit_arrivals.items():
+        # (a) Override ships heading into enemy positions
+        overridden_act = {ship.id: act for ship, act in ship_resolved}
+        for ship, act in ship_resolved:
+            if dest_of[ship.id] in enemy_positions:
+                overridden_act[ship.id] = ACTION_STAY
+                dest_of[ship.id] = ship.position
+
+        # (b) Multiple friendlies targeting same cell → heaviest keeps going
+        cell_arrivals: dict = {}
+        for ship, _ in ship_resolved:
+            dest = dest_of[ship.id]
+            if dest != ship.position:   # only ships that are actually moving
+                cell_arrivals.setdefault(dest, []).append((ship.halite_amount, ship.id))
+        for dest, arrivals in cell_arrivals.items():
             if len(arrivals) > 1:
-                arrivals.sort(key=lambda x: x[0], reverse=True)
-                for _, s, _ in arrivals[1:]:
-                    delayed_ships.add(s.id)
+                arrivals.sort(reverse=True)   # heaviest cargo gets priority
+                for _, sid in arrivals[1:]:
+                    overridden_act[sid] = ACTION_STAY
 
         commands = []
         dir_map = {'n': Direction.North, 's': Direction.South,
                    'e': Direction.East,  'w': Direction.West}
-        for ship, action_idx in ship_resolved:
-            if ship.id in delayed_ships:
-                action_idx = ACTION_STAY
+        for ship, _ in ship_resolved:
+            action_idx = overridden_act[ship.id]
             direction_str = ACTION_TO_DIR[action_idx]
             if direction_str == 'o':
                 commands.append(ship.stay_still())
