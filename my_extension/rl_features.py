@@ -7,6 +7,7 @@ and a replay-state dict (for imitation learning data collection).
 Observation layout
 ------------------
 Spatial : float32[WINDOW_SIZE, WINDOW_SIZE, N_SPATIAL_CHANNELS]
+  Window is 5×5 (2-cell radius) centred on the observing ship.
   Ch 0 – cell halite / MAX_HALITE
   Ch 1 – my ship present (binary)
   Ch 2 – my ship cargo / MAX_HALITE
@@ -33,6 +34,16 @@ Scalars : float32[N_SCALAR_FEATURES]
   10 – turns slack = (turns_left − dist_deposit) / max_turns
   11 – enemy ships within 2 steps / 10
   12 – other friendly ships within 2 steps / 10
+
+Actions
+-------
+  0 STAY   – stay and mine
+  1 NORTH  – move north
+  2 EAST   – move east
+  3 SOUTH  – move south
+  4 WEST   – move west
+  5 RANDOM – meta: environment picks a random primitive action (0–4)
+  6 HOME   – meta: environment moves one step toward nearest deposit
 """
 
 import numpy as np
@@ -42,7 +53,7 @@ from typing import Dict, List, Tuple
 # Observation shape constants
 # ---------------------------------------------------------------------------
 
-WINDOW_SIZE        = 11
+WINDOW_SIZE        = 5
 N_SPATIAL_CHANNELS = 11
 N_SCALAR_FEATURES  = 13
 
@@ -55,8 +66,10 @@ ACTION_NORTH = 1
 ACTION_EAST  = 2
 ACTION_SOUTH = 3
 ACTION_WEST  = 4
+ACTION_RANDOM = 5   # meta: resolved to random primitive at environment level
+ACTION_HOME   = 6   # meta: resolved to one step toward nearest deposit
 
-N_SHIP_ACTIONS = 5
+N_SHIP_ACTIONS = 7
 
 DIR_TO_ACTION = {
     'o': ACTION_STAY,
