@@ -121,11 +121,11 @@ python rl_train.py --resume checkpoints\model_ep100.pt --start-episode 101 --epi
 | `--checkpoint-interval` | 50 | Save a checkpoint every N episodes |
 | `--resume` | *(none)* | Path to `.pt` file to resume from |
 | `--start-episode` | 1 | Episode counter start (use with `--resume`) |
-| `--opponent-policy` | `idle` | `idle` (no opponent moves) or `greedy` (scripted heuristic bot) |
-| `--death-penalty-scale` | 0.5 | Multiplier on cargo lost when a ship dies (proportional, not flat) |
-| `--cargo-reward-scale` | 0.3 | Weight on per-turn cargo-gain reward (dense learning signal) |
-| `--ent-coef` | 0.05 | Entropy bonus weight — higher = more exploration, prevents policy collapse |
-| `--ent-floor` | 0.5 | Hard minimum entropy (nats) — floor below which collapse is prevented |
+| `--opponent-policy` | `idle` | `idle` (no moves), `greedy` (scripted heuristic), `random` |
+| `--collision-scale` | 20.0 | Fixed penalty added per destroyed p0 ship (on top of cargo lost) |
+| `--ent-coef` | 0.25 | Entropy bonus weight — higher = more exploration, prevents policy collapse |
+| `--ent-floor` | 0.5 | Entropy floor (nats) — below this threshold an extra penalty kicks in |
+| `--ent-floor-coef` | 0.5 | Extra entropy penalty multiplier when below `--ent-floor` |
 | `--width` / `--height` | 32 | Map dimensions |
 | `--lr` | 3e-4 | Learning rate |
 | `--device` | `cpu` | `cpu` or `cuda` |
@@ -138,9 +138,11 @@ python rl_train.py --resume checkpoints\model_ep100.pt --start-episode 101 --epi
 ### Console output (live)
 The training script prints every 10 episodes:
 ```
-Episode    10 | reward      0.0 | avg100      0.0 | entropy 1.609 | 12s
-Episode    20 | reward    150.0 | avg100    80.0 | entropy 1.450 | 24s
+Episode    10 | reward      0.0 | avg100      0.0 | deposited      0 | entropy 1.946 | s= 0% n= 0% e= 0% s= 0% w= 0% r= 0% h= 0% | 12s
+Episode    20 | reward   1500.0 | avg100    800.0 | deposited   1450 | entropy 1.603 | s=18% n=16% e=15% s=17% w=14% r= 8% h=12% | 24s
 ```
+
+Columns in order: episode · episode reward · 100-ep rolling average · halite banked · mean entropy · action distribution (stay/north/east/south/west/random/home %) · elapsed seconds.
 
 ### CSV log (any time, including after training)
 Open `checkpoints\training_log.csv` in Excel, or tail it in a second terminal:
@@ -149,10 +151,11 @@ Open `checkpoints\training_log.csv` in Excel, or tail it in a second terminal:
 while ($true) { Get-Content checkpoints\training_log.csv | Select-Object -Last 5; Start-Sleep 10 }
 ```
 
-Columns: `episode`, `reward`, `avg100_reward`, `deposited`, `mean_entropy`, `elapsed_sec`
+Columns: `episode`, `reward`, `avg100_reward`, `deposited`, `mean_entropy`, `elapsed_sec`, `stay`, `north`, `east`, `south`, `west`, `random`, `home`
 
 - **`deposited`** — raw halite actually banked this episode (ignores reward formula). This is the clearest measure of real performance.
-- **`reward`** — shaped reward (deposit + action bonuses). Use for training trend; not directly comparable to halite.
+- **`reward`** — v8 shaped reward: `Σ(cargo_after − cargo_before)` for surviving ships + halite deposited − `(collision_scale + cargo_lost)` per destroyed p0 ship.
+- **`stay`…`home`** — fraction of all actions taken that were each action type this episode (0.0–1.0). Useful for diagnosing policy collapse (e.g. one action near 1.0).
 
 ### How to read the entropy column
 
@@ -296,7 +299,7 @@ python run_game.py \
 
 | Reward range | Meaning |
 |---|---|
-| Consistently negative (e.g. −200) | Bot is losing loaded ships; `death_penalty_scale` may be too high |
-| Near 0 | Bot is avoiding deaths but not mining much yet |
+| Consistently negative (e.g. −200) | Bot is losing loaded ships; collision_scale penalty dominates |
+| Near 0 | Bot is avoiding deaths but net cargo gain is close to zero |
 | Positive and rising | Bot is collecting and depositing halite — learning is working |
-| Positive then plateauing | Normal; switch to greedy opponent for harder challenge |
+| Positive then plateauing | Normal; switch to greedy opponent for a harder challenge |

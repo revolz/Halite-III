@@ -6,13 +6,33 @@ Loads a trained ActorCritic model and plays Halite III using the standard
 hlt protocol.  Communicates with the engine via stdin/stdout, exactly like
 any other starter-kit bot.
 
+Behaviour
+---------
+Each turn the bot:
+  1. Runs the neural network for every owned ship to get a raw action index.
+  2. Applies home-memory override: ships with cargo ≥ 60 % of MAX_HALITE are
+     committed to returning home until they deposit (cargo drops to 0).
+  3. Resolves meta-actions (RANDOM → random primitive, HOME → step toward
+     nearest deposit).
+  4. Runs 4-phase collision prevention:
+       Phase 1 – build enemy threat zone (current cell + 4 neighbours per enemy)
+       Phase 2 – compute each ship's destination
+       Phase 3a – ships moving INTO the threat zone are forced STAY
+       Phase 3b – ships already AT a threat-zone cell escape sideways to the
+                  first safe adjacent cell (avoids sitting still while enemy
+                  walks in)
+       Phase 4  – friendly cascade: stayers own their cell; movers yield;
+                  heaviest mover wins multi-mover contests; iterated until stable
+  5. Spawns a new ship if affordable and the spawn guard is clear (no friendly
+     ship at the shipyard or any adjacent cell).
+
 Usage
 -----
     # Run via the engine or run_game.py:
-    python rl_bot.py --model checkpoints/model_final.pt
+    python rl_bot.py --model checkpoints/model_final_weights.pt
 
     # Register with run_game.py:
-    python run_game.py --bot "python my_extension/rl_bot.py --model checkpoints/model_final.pt"
+    python run_game.py --bot "python my_extension/rl_bot.py --model checkpoints/model_final_weights.pt"
 """
 
 import argparse

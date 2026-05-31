@@ -8,7 +8,10 @@ Usage
 Each episode:
   1. A fresh game is initialised via HaliteEnv.
   2. All player-0 ships are stepped; each produces a (obs, action, reward, …) tuple.
-  3. Team reward (halite deposited) is shared across all ships that turn.
+  3. Per-step reward (v8) = Σ(cargo_after − cargo_before) for surviving ships
+       + halite deposited this turn
+       − (collision_scale + cargo_lost) for every p0 ship destroyed.
+     This team reward is split equally across all ships that acted this step.
   4. After the episode, GAE advantages are computed per-ship trajectory.
   5. The policy is updated with PPO for n_epochs mini-batch passes.
   6. Every checkpoint_interval episodes the current weights are saved and
@@ -16,7 +19,8 @@ Each episode:
 
 Opponent pool
   Opponents load a random past checkpoint when one is available.
-  Before any checkpoints exist they use the built-in greedy scripted policy.
+  Before any checkpoints exist they use the built-in scripted policy
+  selected by --opponent-policy (idle / greedy / random).
 """
 
 import argparse
