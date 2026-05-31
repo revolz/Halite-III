@@ -124,6 +124,8 @@ python rl_train.py --resume checkpoints\model_ep100.pt --start-episode 101 --epi
 | `--opponent-policy` | `idle` | `idle` (no opponent moves) or `greedy` (scripted heuristic bot) |
 | `--death-penalty-scale` | 0.5 | Multiplier on cargo lost when a ship dies (proportional, not flat) |
 | `--cargo-reward-scale` | 0.3 | Weight on per-turn cargo-gain reward (dense learning signal) |
+| `--ent-coef` | 0.05 | Entropy bonus weight — higher = more exploration, prevents policy collapse |
+| `--ent-floor` | 0.5 | Hard minimum entropy (nats) — floor below which collapse is prevented |
 | `--width` / `--height` | 32 | Map dimensions |
 | `--lr` | 3e-4 | Learning rate |
 | `--device` | `cpu` | `cpu` or `cuda` |
@@ -136,8 +138,8 @@ python rl_train.py --resume checkpoints\model_ep100.pt --start-episode 101 --epi
 ### Console output (live)
 The training script prints every 10 episodes:
 ```
-Episode    10 | reward      0.0 | avg100      0.0 | 12s
-Episode    20 | reward    150.0 | avg100    80.0 | 24s
+Episode    10 | reward      0.0 | avg100      0.0 | entropy 1.609 | 12s
+Episode    20 | reward    150.0 | avg100    80.0 | entropy 1.450 | 24s
 ```
 
 ### CSV log (any time, including after training)
@@ -147,7 +149,17 @@ Open `checkpoints\training_log.csv` in Excel, or tail it in a second terminal:
 while ($true) { Get-Content checkpoints\training_log.csv | Select-Object -Last 5; Start-Sleep 10 }
 ```
 
-Columns: `episode`, `reward`, `avg100_reward`, `elapsed_sec`
+Columns: `episode`, `reward`, `avg100_reward`, `mean_entropy`, `elapsed_sec`
+
+### How to read the entropy column
+
+| Entropy value | What it means | Action |
+|---|---|---|
+| ~1.61 nats | Perfectly uniform — all 5 actions equally likely | Normal at start |
+| 1.0–1.4 nats | Healthy exploration — policy has preferences but still tries things | Good |
+| 0.5–1.0 nats | Moderate convergence — learning is working | Good |
+| < 0.5 nats | Warning: policy is converging hard on a few actions | Watch closely |
+| < 0.2 nats | Collapse — bot probably always does same action | Retrain with higher `--ent-coef` |
 
 ---
 
