@@ -276,6 +276,9 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
     game = hlt.Game()
     game.ready("RLBot")
 
+    # Ships currently committed to going home (mirrors rl_env home memory)
+    homing_ships: set = set()
+
     while True:
         game.update_frame()
         me      = game.me
@@ -294,11 +297,18 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
             else:
                 action_idx, _, _ = model.select_action(sp_t, sc_t)
 
+            # Home memory: if this ship committed to going home, keep it going
+            if ship.id in homing_ships:
+                action_idx = ACTION_HOME
+
             # Resolve meta-actions to primitives (same logic as rl_env.py)
             if action_idx == ACTION_RANDOM:
                 action_idx = random.randint(0, 4)
             elif action_idx == ACTION_HOME:
+                homing_ships.add(ship.id)
                 action_idx = _home_dir_hlt(ship, game, me)
+                if action_idx == ACTION_STAY:   # arrived at deposit — cancel home mode
+                    homing_ships.discard(ship.id)
 
             direction_str = ACTION_TO_DIR[action_idx]
 

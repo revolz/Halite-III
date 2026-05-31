@@ -52,13 +52,13 @@ class HaliteEnv:
 
     Observation  {ship_id: (spatial float32[W,W,C], scalars float32[S])}
     Action       {ship_id: int in [0, N_SHIP_ACTIONS)}
-                   0=Stay/Mine  1=N  2=E  3=S  4=W
-    Reward       (per step)
-                   + halite deposited this turn          (direct objective progress)
-                   + cargo_reward_scale × halite mined  (partial credit for potential)
-                   − death_penalty_scale × cargo lost   (proportional to actual loss)
-                 (terminal bonus)
-                   + 0.01 × total halite deposited this game
+                   0=Stay/Mine  1=N  2=E  3=S  4=W  5=RANDOM  6=HOME
+    Reward       (per step, per ship averaged)
+                   + halite deposited this turn                  (primary signal)
+                   + stay_scale × (1−cargo) if STAY and mined   (mine when empty)
+                   + home_scale × cargo if HOME                  (return when full)
+                   + explore_scale if RANDOM and bank_stuck      (break loops)
+                   − collision_scale × (1+cargo) per p0 ship destroyed  (avoid crashes)
     Done         turn >= max_turns  or  engine._game_ended()
     """
 
@@ -73,6 +73,7 @@ class HaliteEnv:
         home_scale:         float = 2.0,
         explore_scale:      float = 0.5,
         explore_window:     int   = 30,
+        collision_scale:    float = 50.0,
     ):
         self.width           = width
         self.height          = height
@@ -83,6 +84,7 @@ class HaliteEnv:
         self.home_scale      = home_scale
         self.explore_scale   = explore_scale
         self.explore_window  = explore_window
+        self.collision_scale = collision_scale
         self.engine: Optional[HaliteEngine] = None
 
     # ------------------------------------------------------------------
@@ -105,6 +107,8 @@ class HaliteEnv:
         # Track when bank last grew (for explore bonus)
         self._last_deposit_turn: int = 0
         self._bank_at_check: int = 0
+        # Ships currently committed to going home (memory mechanism)
+        self._homing_ships: set = set()
 
         # Pre-compute inspiration for turn-0 state (no ships → no-op but correct)
         self.engine._update_inspiration()
@@ -143,9 +147,12 @@ class HaliteEnv:
 
         # Snapshot owner map BEFORE commands (destroyed ships are removed)
         pre_ship_owners = {eid: eng.entities[eid]['owner'] for eid in eng.entities}
+        # Snapshot p0 cargo before commands for collision penalty calculation
+        pre_p0_cargo = {sid: eng.entities[sid]['cargo']
+                        for sid, owner in pre_ship_owners.items() if owner == 0}
 
         # Build commands
-        p0_cmd    = self._build_p0_commands(ship_actions, spawn)
+        p0_cmd, intent_actions = self._build_p0_commands(ship_actions, spawn)
         all_cmds  = {0: p0_cmd}
         for pid in range(1, eng.num_players):
             all_cmds[pid] = self._opponent_command(pid)
@@ -183,6 +190,8 @@ class HaliteEnv:
         bank_stuck = (eng.turn - self._last_deposit_turn) >= self.explore_window
 
         # 2. Per-action state-based shaping.
+        #    Uses intent_actions (post-memory-override, pre-direction-resolution)
+        #    so HOME reward fires on memory-driven turns too.
         #    STAY  → reward only if ship actually mined this turn (cargo increased).
         #            Scales with empty cargo — encourages mining when hold is empty.
         #            Guard against factory-camping hack: sitting on a cell with no
@@ -190,10 +199,8 @@ class HaliteEnv:
         #    HOME  → reward scales with full cargo (encourage returning when full)
         #    RANDOM → exploration bonus when bank is stuck
         action_reward = 0.0
-        n_acting = max(1, len(ship_actions))
-        for sid, action in ship_actions.items():
-            if sid not in eng.player_entities[0] and sid not in pre_ship_owners:
-                continue
+        n_acting = max(1, len(intent_actions))
+        for sid, action in intent_actions.items():
             cargo_pre_raw = turn_start_cargo.get(sid, 0)
             cargo_pre     = cargo_pre_raw / MAX_HALITE  # 0–1
             if action == ACTION_STAY:
@@ -206,7 +213,16 @@ class HaliteEnv:
             elif action == ACTION_RANDOM and bank_stuck:
                 action_reward += self.explore_scale
 
-        reward = deposit_reward + action_reward / n_acting
+        # 3. Collision penalty: penalise every p0 ship destroyed this turn.
+        #    Scales with lost cargo so the bot learns cargo loss is doubly bad.
+        p0_ships_before = set(pre_p0_cargo.keys())
+        destroyed_p0    = p0_ships_before - set(eng.player_entities[0].keys())
+        collision_penalty = sum(
+            self.collision_scale * (1.0 + pre_p0_cargo[sid] / MAX_HALITE)
+            for sid in destroyed_p0
+        )
+
+        reward = deposit_reward + action_reward / n_acting - collision_penalty
 
         # ------------------------------------------------------------------
         # Done
@@ -233,21 +249,37 @@ class HaliteEnv:
     # Command helpers
     # ------------------------------------------------------------------
 
-    def _build_p0_commands(self, ship_actions: Dict[int, int], spawn: bool) -> str:
+    def _build_p0_commands(self, ship_actions: Dict[int, int], spawn: bool):
+        """Build command string for player 0 and return (cmd_str, intent_actions).
+
+        intent_actions maps ship_id → action after home-memory override but
+        before direction resolution (still contains ACTION_HOME / ACTION_RANDOM).
+        This is what the reward block must use so HOME reward fires on memory turns.
+        """
         eng    = self.engine
         tokens = []
+        intent_actions: Dict[int, int] = {}
         for ship_id, action in ship_actions.items():
             if ship_id not in eng.player_entities[0]:
                 continue
+            # Home memory: if this ship is committed to returning, keep it going
+            if ship_id in self._homing_ships:
+                action = ACTION_HOME
+            intent_actions[ship_id] = action
             # Resolve meta-actions to primitive 0–4
             if action == ACTION_RANDOM:
                 action = random.randint(0, 4)
             elif action == ACTION_HOME:
+                self._homing_ships.add(ship_id)
                 action = self._home_dir(ship_id)
+                if action == ACTION_STAY:   # arrived at deposit — cancel home mode
+                    self._homing_ships.discard(ship_id)
             tokens.append(f"m {ship_id} {ACTION_TO_DIR[action]}")
         if spawn and eng.players[0]['energy'] >= SHIP_COST:
-            tokens.append('g')
-        return ' '.join(tokens)
+            fx, fy = eng.players[0]['factory']
+            if (fx, fy) not in set(eng.player_entities[0].values()):
+                tokens.append('g')
+        return ' '.join(tokens), intent_actions
 
     def _home_dir(self, ship_id: int) -> int:
         """Return the primitive action (0–4) that moves one step toward the
