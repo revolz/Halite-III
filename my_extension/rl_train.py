@@ -50,10 +50,11 @@ DEFAULTS = dict(
     lam                 = 0.95,    # GAE lambda
     clip_eps            = 0.2,
     vf_coef             = 0.5,
-    ent_coef            = 0.15,    # entropy bonus weight — higher = more exploration (was 0.05)
-    ent_floor           = 0.5,     # nats — hard minimum entropy; prevents total policy collapse
+    ent_coef            = 0.25,    # entropy bonus weight (raised from 0.15 to resist collapse)
+    ent_floor           = 0.5,     # nats — entropy floor threshold
+    ent_floor_coef      = 0.5,     # extra penalty when entropy < ent_floor (has gradient; clamp had none)
     lr                  = 3e-4,
-    n_epochs            = 4,
+    n_epochs            = 3,
     minibatch_size      = 64,
     max_grad_norm       = 0.5,
     checkpoint_interval = 50,
@@ -316,12 +317,18 @@ class PPOTrainer:
 
                 vf_loss   = F.mse_loss(val, ret_t[mb])
 
-                # Entropy floor: if mean entropy is below the floor, the penalty
-                # is proportionally larger, pushing the policy back toward exploration.
-                mean_ent  = ent.mean()
-                ent_loss  = -torch.clamp(mean_ent, min=torch.tensor(ent_floor, device=self.device))
+                # Entropy loss:
+                #   - Always use raw mean_ent so gradient flows (clamp killed gradient).
+                #   - Add a separate relu-penalty when entropy is below the floor so
+                #     the policy is actively pushed back toward exploration.
+                #   - Combined gradient below floor = -(ent_coef + ent_floor_coef),
+                #     much stronger than ent_coef alone.
+                mean_ent    = ent.mean()
+                ent_loss    = -mean_ent
+                floor_deficit = F.relu(torch.tensor(ent_floor, dtype=torch.float32, device=self.device) - mean_ent)
+                floor_loss  = cfg.get('ent_floor_coef', 0.5) * floor_deficit
 
-                loss = pg_loss + cfg['vf_coef'] * vf_loss + cfg['ent_coef'] * ent_loss
+                loss = pg_loss + cfg['vf_coef'] * vf_loss + cfg['ent_coef'] * ent_loss + floor_loss
 
                 self.optim.zero_grad()
                 loss.backward()
