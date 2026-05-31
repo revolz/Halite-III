@@ -287,18 +287,24 @@ class HaliteEnv:
             resolved_prims[ship_id] = action
 
         # Safety override: prevent ships moving into collisions.
-        # Covers two cases in one pass:
-        #   (a) Destination is current enemy ship position → STAY
+        # Covers three cases in one pass:
+        #   (a) Destination is within enemy threat zone (current cell + all 4 neighbors)
+        #       → catches both "enemy stays put" and "enemy moves toward same cell"
         #   (b) Two friendly ships target the same cell → heaviest keeps going, others wait
         #   (c) Deposit stagger: same cell as own deposit handled by (b)
         _dir_delta = {
             ACTION_STAY: (0, 0), ACTION_NORTH: (0, -1), ACTION_SOUTH: (0, 1),
             ACTION_EAST: (1, 0), ACTION_WEST: (-1, 0),
         }
-        enemy_positions = set()
+        _neighbor_deltas = [(0, 0), (0, -1), (0, 1), (1, 0), (-1, 0)]
+
+        # Build threat zone: every cell an enemy occupies or could move into next turn
+        enemy_threat_zone = set()
         for pid in range(1, eng.num_players):
             for _, epos in eng.player_entities[pid].items():
-                enemy_positions.add(epos)
+                ex, ey = epos
+                for ddx, ddy in _neighbor_deltas:
+                    enemy_threat_zone.add(((ex + ddx) % W, (ey + ddy) % H))
 
         dest_map: Dict[int, tuple] = {}   # ship_id → destination cell
         for sid, prim in resolved_prims.items():
@@ -306,24 +312,32 @@ class HaliteEnv:
             ddx, ddy = _dir_delta[prim]
             dest_map[sid] = ((sx + ddx) % W, (sy + ddy) % H)
 
-        # (a) Enemy at destination → override to STAY
-        for sid, dest in dest_map.items():
-            if dest in enemy_positions:
+        # (a) Destination in enemy threat zone → override to STAY
+        for sid, dest in list(dest_map.items()):
+            if dest in enemy_threat_zone:
                 resolved_prims[sid] = ACTION_STAY
-                dest_map[sid] = eng.player_entities[0][sid]   # update to current pos
+                dest_map[sid] = eng.player_entities[0][sid]
 
-        # (b) Multiple friendlies targeting same cell → heaviest keeps going
-        cell_arrivals: Dict[tuple, list] = {}
-        for sid, dest in dest_map.items():
-            if dest != eng.player_entities[0][sid]:   # only ships that are actually moving
-                cell_arrivals.setdefault(dest, []).append(
+        # (b) Friendly collision resolution: no two of our ships may share a final cell.
+        # Iterates until stable to handle cascades (a forced STAY may expose a new conflict).
+        ship_list = list(resolved_prims.keys())
+        for _ in range(len(ship_list)):   # at most N iterations
+            pos_occupants: Dict[tuple, list] = {}
+            for sid in ship_list:
+                pos_occupants.setdefault(dest_map[sid], []).append(
                     (eng.entities[sid]['cargo'], sid)
                 )
-        for dest, arrivals in cell_arrivals.items():
-            if len(arrivals) > 1:
-                arrivals.sort(reverse=True)   # heaviest cargo gets priority
-                for _, sid in arrivals[1:]:
-                    resolved_prims[sid] = ACTION_STAY
+            changed = False
+            for dest, occupants in pos_occupants.items():
+                if len(occupants) > 1:
+                    occupants.sort(reverse=True)   # heaviest keeps its move
+                    for _, sid in occupants[1:]:
+                        if resolved_prims[sid] != ACTION_STAY:
+                            resolved_prims[sid] = ACTION_STAY
+                            dest_map[sid] = eng.player_entities[0][sid]
+                            changed = True
+            if not changed:
+                break
 
         tokens = [f"m {sid} {ACTION_TO_DIR[prim]}" for sid, prim in resolved_prims.items()]
         if spawn and eng.players[0]['energy'] >= SHIP_COST:
