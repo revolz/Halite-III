@@ -67,7 +67,28 @@ python replay_viewer.py replays\replay-20260531-162050-42-40-40.hlt
 
 ## 3. Train the RL bot
 
-### Start training from scratch
+### Recommended 3-phase training schedule
+
+Train in phases — start easy, then increase difficulty:
+
+**Phase 1 — Learn to mine (idle opponent, 1000 episodes)**
+```bash
+python rl_train.py --episodes 1000 --checkpoint-dir checkpoints --opponent-policy idle
+```
+Expected: reward goes from ~0 to positive as bot learns to collect and deposit halite.
+
+**Phase 2 — Add competition (greedy opponent, resume for 1000 more)**
+```bash
+python rl_train.py --resume checkpoints\model_ep1000.pt --start-episode 1001 --episodes 1000 --checkpoint-dir checkpoints --opponent-policy greedy
+```
+Expected: reward may dip briefly then recover as bot adapts to an opponent.
+
+**Phase 3 — Fine-tune (optional)**
+```bash
+python rl_train.py --resume checkpoints\model_ep2000.pt --start-episode 2001 --episodes 1000 --checkpoint-dir checkpoints --opponent-policy greedy
+```
+
+### Start training from scratch (single command, idle opponent)
 
 ```bash
 python rl_train.py --episodes 2000 --checkpoint-dir checkpoints
@@ -100,9 +121,11 @@ python rl_train.py --resume checkpoints\model_ep100.pt --start-episode 101 --epi
 | `--checkpoint-interval` | 50 | Save a checkpoint every N episodes |
 | `--resume` | *(none)* | Path to `.pt` file to resume from |
 | `--start-episode` | 1 | Episode counter start (use with `--resume`) |
+| `--opponent-policy` | `idle` | `idle` (no opponent moves) or `greedy` (scripted heuristic bot) |
+| `--collision-penalty` | 10.0 | Penalty per ship lost in collision (lower = less risk-averse) |
+| `--cargo-reward-scale` | 0.3 | Weight on per-turn cargo-gain reward (dense learning signal) |
 | `--width` / `--height` | 32 | Map dimensions |
 | `--lr` | 3e-4 | Learning rate |
-| `--episodes` | 2000 | Total episodes |
 | `--device` | `cpu` | `cpu` or `cuda` |
 | `--seed` | *(random)* | Fixed seed for reproducible maps |
 
@@ -177,19 +200,31 @@ python run_game.py \
 
 ```
 1. Run a few games to generate replays:
-   python run_game.py --replay --episodes 10
+   python run_game.py --replay --width 32 --height 32
 
 2. (Optional) Extract imitation data from good replays:
    python rl_collect.py replays\ --output dataset\
 
-3. Start training:
-   python rl_train.py --episodes 2000 --checkpoint-dir checkpoints
+3. Phase 1 — train against idle opponent until reward is positive:
+   python rl_train.py --episodes 1000 --checkpoint-dir checkpoints --opponent-policy idle
 
-4. Monitor training_log.csv to watch reward improve.
+4. Phase 2 — resume against greedy opponent:
+   python rl_train.py --resume checkpoints\model_ep1000.pt --start-episode 1001 --episodes 1000 --checkpoint-dir checkpoints --opponent-policy greedy
 
-5. Test a checkpoint against the scripted bot:
-   python run_game.py --bot "python rl_bot.py --model checkpoints\model_ep500_weights.pt" --bot "python ..\starter_kits\Python3\MyBot.py" --verbose
+5. Monitor training_log.csv to watch reward improve.
 
-6. Resume if you want to keep training:
-   python rl_train.py --resume checkpoints\model_ep500.pt --start-episode 501 --episodes 1500 --checkpoint-dir checkpoints
+6. Test a checkpoint against the scripted bot:
+   python run_game.py --bot "python rl_bot.py --model checkpoints\model_ep500_weights.pt" --bot "..\starter_kits\Python3\MyBot.py" --verbose
+
+7. Resume if you want to keep training:
+   python rl_train.py --resume checkpoints\model_ep2000.pt --start-episode 2001 --episodes 1000 --checkpoint-dir checkpoints
 ```
+
+### How to read the training log
+
+| Reward range | Meaning |
+|---|---|
+| Consistently negative (e.g. −200) | Bot is losing ships every game; not learning to mine |
+| Near 0 | Bot is avoiding collisions but not mining much yet |
+| Positive and rising | Bot is collecting and depositing halite — learning is working |
+| Positive then plateauing | Normal; switch to greedy opponent for harder challenge |
