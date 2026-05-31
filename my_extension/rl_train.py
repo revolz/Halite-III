@@ -60,6 +60,8 @@ DEFAULTS = dict(
     checkpoint_dir      = 'checkpoints',
     device              = 'cpu',
     seed                = None,
+    resume              = None,    # path to .pt file to resume from
+    start_episode       = 1,       # episode number to start counting from (use with --resume)
 )
 
 
@@ -161,6 +163,29 @@ class PPOTrainer:
         self.pool   = OpponentPool(cfg['checkpoint_dir'], cfg['pool_size'])
 
         self._episode_rewards = deque(maxlen=100)
+
+        # Resume from checkpoint if requested
+        if cfg.get('resume'):
+            self._load_checkpoint(cfg['resume'])
+
+    # ------------------------------------------------------------------
+    # Checkpoint load
+    # ------------------------------------------------------------------
+
+    def _load_checkpoint(self, path: str):
+        if not os.path.isfile(path):
+            print(f"[WARNING] Resume file not found: {path}  — starting fresh.")
+            return
+        ckpt = torch.load(path, map_location=self.device)
+        # Support both plain state_dict and full checkpoint dict
+        if isinstance(ckpt, dict) and 'model_state' in ckpt:
+            self.model.load_state_dict(ckpt['model_state'])
+            self.optim.load_state_dict(ckpt['optim_state'])
+            print(f"Resumed model + optimizer from {path}")
+        else:
+            # Plain model weights only (saved by ActorCritic.save())
+            self.model.load_state_dict(ckpt)
+            print(f"Resumed model weights from {path}  (optimizer state reset)")
 
     # ------------------------------------------------------------------
     # Episode collection
@@ -296,35 +321,65 @@ class PPOTrainer:
         os.makedirs(cfg['checkpoint_dir'], exist_ok=True)
 
         env = HaliteEnv(
-            width         = cfg['width'],
-            height        = cfg['height'],
-            num_players   = cfg['num_players'],
-            seed          = cfg['seed'],
+            width           = cfg['width'],
+            height          = cfg['height'],
+            num_players     = cfg['num_players'],
+            seed            = cfg['seed'],
             opponent_policy = 'greedy',
         )
 
+        start_ep   = cfg.get('start_episode', 1)
+        total_eps  = start_ep + cfg['episodes'] - 1
         start_time = time.time()
 
-        for ep in range(1, cfg['episodes'] + 1):
+        # CSV log (append so resuming keeps history)
+        import csv
+        log_path   = os.path.join(cfg['checkpoint_dir'], 'training_log.csv')
+        log_exists = os.path.isfile(log_path)
+        log_file   = open(log_path, 'a', newline='')
+        log_writer = csv.writer(log_file)
+        if not log_exists:
+            log_writer.writerow(['episode', 'reward', 'avg100_reward', 'elapsed_sec'])
+
+        for ep in range(start_ep, total_eps + 1):
             trajectories, ep_reward = self._collect_episode(env)
             self._ppo_update(trajectories)
             self._episode_rewards.append(ep_reward)
+            mean_r  = sum(self._episode_rewards) / len(self._episode_rewards)
+            elapsed = time.time() - start_time
+
+            log_writer.writerow([ep, f'{ep_reward:.2f}', f'{mean_r:.2f}', f'{elapsed:.1f}'])
+            log_file.flush()
 
             if ep % 10 == 0:
-                mean_r = sum(self._episode_rewards) / len(self._episode_rewards)
-                elapsed = time.time() - start_time
                 print(f"Episode {ep:5d} | reward {ep_reward:8.1f} | "
                       f"avg100 {mean_r:8.1f} | {elapsed:.0f}s")
 
             if ep % cfg['checkpoint_interval'] == 0:
                 path = os.path.join(cfg['checkpoint_dir'], f'model_ep{ep}.pt')
-                self.model.save(path)
+                # Save full checkpoint (model + optimizer) for resuming
+                torch.save({
+                    'model_state': self.model.state_dict(),
+                    'optim_state': self.optim.state_dict(),
+                    'episode':     ep,
+                }, path)
+                # Also save plain weights for rl_bot.py / rl_eval.py
+                self.model.save(path.replace('.pt', '_weights.pt'))
                 self.pool.add(self.model, ep)
+                print(f"Checkpoint saved → {path}")
+
+        log_file.close()
 
         # Final save
         final_path = os.path.join(cfg['checkpoint_dir'], 'model_final.pt')
-        self.model.save(final_path)
+        torch.save({
+            'model_state': self.model.state_dict(),
+            'optim_state': self.optim.state_dict(),
+            'episode':     total_eps,
+        }, final_path)
+        self.model.save(os.path.join(cfg['checkpoint_dir'], 'model_final_weights.pt'))
         print(f"\nTraining complete. Final model: {final_path}")
+        print(f"Training log:    {log_path}")
         return self.model
 
 
@@ -335,11 +390,16 @@ class PPOTrainer:
 def main():
     parser = argparse.ArgumentParser(description='Train Halite III PPO agent')
     for key, default in DEFAULTS.items():
-        t = type(default) if default is not None else str
-        parser.add_argument(f'--{key.replace("_", "-")}', default=default, type=t)
+        if key in ('resume',):
+            parser.add_argument(f'--{key}', default=None, type=str)
+        elif key in ('seed',):
+            parser.add_argument(f'--{key}', default=None, type=int)
+        else:
+            t = type(default) if default is not None else str
+            parser.add_argument(f'--{key.replace("_", "-")}', default=default, type=t)
 
-    args  = parser.parse_args()
-    cfg   = {k: getattr(args, k) for k in DEFAULTS}
+    args = parser.parse_args()
+    cfg  = {k: getattr(args, k.replace('-', '_')) for k in DEFAULTS}
 
     trainer = PPOTrainer(cfg)
     trainer.train()
