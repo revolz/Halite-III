@@ -1,0 +1,269 @@
+#!/usr/bin/env python3
+"""
+Halite III RL Bot
+
+Loads a trained ActorCritic model and plays Halite III using the standard
+hlt protocol.  Communicates with the engine via stdin/stdout, exactly like
+any other starter-kit bot.
+
+Usage
+-----
+    # Run via the engine or run_game.py:
+    python rl_bot.py --model checkpoints/model_final.pt
+
+    # Register with run_game.py:
+    python run_game.py --bot "python my_extension/rl_bot.py --model checkpoints/model_final.pt"
+"""
+
+import argparse
+import math
+import os
+import sys
+from typing import Dict, List, Tuple
+
+import numpy as np
+
+# ── path setup ────────────────────────────────────────────────────────────
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.join(_ROOT, 'starter_kits', 'Python3'))
+
+import torch
+from rl_model    import ActorCritic
+from rl_features import (
+    WINDOW_SIZE, N_SPATIAL_CHANNELS, N_SCALAR_FEATURES, N_SHIP_ACTIONS,
+    ACTION_TO_DIR, DIR_TO_ACTION, torus_dist, torus_delta,
+)
+
+import hlt
+from hlt                 import constants
+from hlt.positionals     import Direction, Position
+
+
+# ---------------------------------------------------------------------------
+# Feature extraction from hlt API objects
+# ---------------------------------------------------------------------------
+
+def _inspired(position: Position, game: hlt.Game, me_id: int) -> bool:
+    """Compute inspiration for a ship at `position` using the hlt API."""
+    from hlt.constants import INSPIRATION_RADIUS, INSPIRATION_SHIP_COUNT, INSPIRATION_ENABLED
+    if not INSPIRATION_ENABLED:
+        return False
+    count = 0
+    for pid, player in game.players.items():
+        if pid == me_id:
+            continue
+        for ship in player.get_ships():
+            if game.game_map.calculate_distance(position, ship.position) <= INSPIRATION_RADIUS:
+                count += 1
+                if count >= INSPIRATION_SHIP_COUNT:
+                    return True
+    return False
+
+
+def _nearest_deposit(position: Position, game: hlt.Game, me) -> Position:
+    """Return the position of the nearest factory or dropoff owned by `me`."""
+    candidates = [me.shipyard.position] + [d.position for d in me.get_dropoffs()]
+    return min(candidates, key=lambda p: game.game_map.calculate_distance(position, p))
+
+
+def extract_spatial_hlt(
+    game: hlt.Game,
+    ship_pos: Position,
+    me,
+) -> np.ndarray:
+    """
+    Build a WINDOW_SIZE × WINDOW_SIZE × N_SPATIAL_CHANNELS float32 array
+    centred on the ship, using hlt API objects.
+    """
+    gmap       = game.game_map
+    W, H       = gmap.width, gmap.height
+    half       = WINDOW_SIZE // 2
+    max_d      = (W + H) / 2.0
+    MAX_HALITE = constants.MAX_HALITE
+    me_id      = me.id
+
+    my_deposits = {me.shipyard.position}
+    for d in me.get_dropoffs():
+        my_deposits.add(d.position)
+
+    # Build structure lookup: position → (is_mine, is_factory)
+    my_struct_pos = set()
+    opp_struct_pos = set()
+    my_struct_pos.add(me.shipyard.position)
+    for d in me.get_dropoffs():
+        my_struct_pos.add(d.position)
+    for pid, player in game.players.items():
+        if pid != me_id:
+            opp_struct_pos.add(player.shipyard.position)
+            for d in player.get_dropoffs():
+                opp_struct_pos.add(d.position)
+
+    # Ship lookups
+    my_ships_by_pos   = {s.position: s for s in me.get_ships()}
+    opp_ships_by_pos  = {}
+    for pid, player in game.players.items():
+        if pid != me_id:
+            for s in player.get_ships():
+                opp_ships_by_pos[s.position] = s
+
+    sx, sy    = ship_pos.x, ship_pos.y
+    spatial   = np.zeros((WINDOW_SIZE, WINDOW_SIZE, N_SPATIAL_CHANNELS), dtype=np.float32)
+    is_insp   = _inspired(ship_pos, game, me_id)
+
+    for dy_off in range(-half, half + 1):
+        for dx_off in range(-half, half + 1):
+            cx  = (sx + dx_off) % W
+            cy  = (sy + dy_off) % H
+            pos = Position(cx, cy)
+            wy  = dy_off + half
+            wx  = dx_off + half
+
+            cell = gmap[pos]
+            spatial[wy, wx, 0] = cell.halite_amount / MAX_HALITE
+
+            if pos in my_ships_by_pos:
+                s = my_ships_by_pos[pos]
+                spatial[wy, wx, 1] = 1.0
+                spatial[wy, wx, 2] = s.halite_amount / MAX_HALITE
+                if _inspired(pos, game, me_id):
+                    spatial[wy, wx, 6] = 1.0
+            elif pos in opp_ships_by_pos:
+                spatial[wy, wx, 3] = 1.0
+
+            if pos in my_struct_pos:
+                spatial[wy, wx, 4] = 1.0 if pos == me.shipyard.position else 0.5
+            elif pos in opp_struct_pos:
+                spatial[wy, wx, 5] = 1.0
+
+            # Per-cell distance to nearest own deposit
+            min_d = min(gmap.calculate_distance(pos, dp) for dp in my_deposits)
+            spatial[wy, wx, 7] = 1.0 - (min_d / max_d)
+
+    return spatial
+
+
+def extract_scalars_hlt(
+    game: hlt.Game,
+    ship,
+    me,
+) -> np.ndarray:
+    """
+    Build an N_SCALAR_FEATURES float32 scalar vector using hlt API objects.
+    """
+    MAX_HALITE = constants.MAX_HALITE
+    MAX_TURNS  = constants.MAX_TURNS
+    gmap       = game.game_map
+    W, H       = gmap.width, gmap.height
+    me_id      = me.id
+
+    sx, sy     = ship.position.x, ship.position.y
+    cargo      = ship.halite_amount
+    is_insp    = _inspired(ship.position, game, me_id)
+    near       = _nearest_deposit(ship.position, game, me)
+    dist_dep   = gmap.calculate_distance(ship.position, near)
+    turns_left = MAX_TURNS - game.turn_number
+    max_dist   = W + H
+
+    # Toroidal delta toward nearest deposit
+    ddx, ddy   = torus_delta(sx, sy, near.x, near.y, W, H)
+
+    return_urgency = 1.0 if (turns_left <= dist_dep * 1.5 + 1 and cargo > 0) else 0.0
+    turns_slack    = (turns_left - dist_dep) / max(1, MAX_TURNS)
+
+    my_ships   = len(list(me.get_ships()))
+    opp_ships  = sum(len(list(p.get_ships())) for pid, p in game.players.items()
+                     if pid != me_id)
+
+    return np.array([
+        turns_left / MAX_TURNS,
+        me.halite_amount / MAX_HALITE,
+        cargo      / MAX_HALITE,
+        my_ships   / 30.0,
+        opp_ships  / 30.0,
+        float(is_insp),
+        dist_dep   / max_dist,
+        ddx / W,
+        ddy / H,
+        return_urgency,
+        turns_slack,
+    ], dtype=np.float32)
+
+
+# ---------------------------------------------------------------------------
+# Spawn heuristic
+# ---------------------------------------------------------------------------
+
+def _should_spawn(game: hlt.Game, me, max_fleet: int = 12) -> bool:
+    """Heuristic: spawn if affordable, fleet is small, and not too late."""
+    turns_left = constants.MAX_TURNS - game.turn_number
+    n_ships    = len(list(me.get_ships()))
+    return (
+        me.halite_amount >= constants.SHIP_COST
+        and n_ships < max_fleet
+        and turns_left > 75
+        and not game.game_map[me.shipyard].is_occupied
+    )
+
+
+# ---------------------------------------------------------------------------
+# Bot main
+# ---------------------------------------------------------------------------
+
+def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
+    device = torch.device(device_str)
+
+    # Load model
+    model = ActorCritic.load(model_path, device=device_str)
+    model.eval()
+
+    # Initialise the Halite game
+    game = hlt.Game()
+    game.ready("RLBot")
+
+    while True:
+        game.update_frame()
+        me      = game.me
+        gmap    = game.game_map
+        commands = []
+
+        for ship in me.get_ships():
+            spatial = extract_spatial_hlt(game, ship.position, me)
+            scalars = extract_scalars_hlt(game, ship, me)
+
+            sp_t = torch.from_numpy(spatial).to(device)
+            sc_t = torch.from_numpy(scalars).to(device)
+
+            if deterministic:
+                action_idx = model.greedy_action(sp_t, sc_t)
+            else:
+                action_idx, _, _ = model.select_action(sp_t, sc_t)
+
+            direction_str = ACTION_TO_DIR[action_idx]
+
+            if direction_str == 'o':
+                commands.append(ship.stay_still())
+            else:
+                dir_map = {
+                    'n': Direction.North,
+                    's': Direction.South,
+                    'e': Direction.East,
+                    'w': Direction.West,
+                }
+                commands.append(ship.move(dir_map[direction_str]))
+
+        if _should_spawn(game, me):
+            commands.append(me.shipyard.spawn())
+
+        game.end_turn(commands)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Halite III RL bot')
+    parser.add_argument('--model',         required=True,        help='path to model .pt file')
+    parser.add_argument('--device',        default='cpu',        help='torch device (cpu or cuda)')
+    parser.add_argument('--deterministic', action='store_true',  help='greedy action selection')
+    args = parser.parse_args()
+
+    main(args.model, args.device, args.deterministic)
