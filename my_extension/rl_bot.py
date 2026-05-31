@@ -253,12 +253,19 @@ def _should_spawn(game: hlt.Game, me, max_fleet: int = 12) -> bool:
     """Heuristic: spawn if affordable, fleet is small, and not too late."""
     turns_left = constants.MAX_TURNS - game.turn_number
     n_ships    = len(list(me.get_ships()))
-    return (
-        me.halite_amount >= constants.SHIP_COST
-        and n_ships < max_fleet
-        and turns_left > 75
-        and not game.game_map[me.shipyard].is_occupied
-    )
+    if not (me.halite_amount >= constants.SHIP_COST
+            and n_ships < max_fleet
+            and turns_left > 75
+            and not game.game_map[me.shipyard].is_occupied):
+        return False
+    # Don't spawn if a friendly ship is adjacent to the shipyard —
+    # it may move in this turn and collide with the spawned ship.
+    sy = me.shipyard.position
+    my_positions = {s.position for s in me.get_ships()}
+    adjacent = {sy.directional_offset(d)
+                for d in [Direction.North, Direction.South,
+                          Direction.East, Direction.West]}
+    return not (my_positions & adjacent)
 
 
 # ---------------------------------------------------------------------------

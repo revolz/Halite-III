@@ -340,7 +340,14 @@ class HaliteEnv:
                 break
 
         tokens = [f"m {sid} {ACTION_TO_DIR[prim]}" for sid, prim in resolved_prims.items()]
-        if spawn and eng.players[0]['energy'] >= SHIP_COST:
+        fx, fy = eng.players[0]['factory']
+        adjacent_to_factory = {
+            ((fx + ddx) % W, (fy + ddy) % H)
+            for ddx, ddy in [(0, -1), (0, 1), (1, 0), (-1, 0)]
+        }
+        friendly_positions = set(eng.player_entities[0].values())
+        factory_safe = not (friendly_positions & (adjacent_to_factory | {(fx, fy)}))
+        if spawn and eng.players[0]['energy'] >= SHIP_COST and factory_safe:
             tokens.append('g')
         return ' '.join(tokens), intent_actions
 
