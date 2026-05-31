@@ -25,7 +25,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from typing import Dict, List, Optional, Tuple
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +56,17 @@ PLAYER_COLORS = [f'#{c:06x}' for c in _PLAYER_COLORS_HEX]
 
 PANEL_BG = '#0d1020'
 TEXT_COLOR = '#dddddd'
+
+# Playback constants
+TICK_MS = 33               # ~30 fps update interval
+TURNS_PER_SEC_DEFAULT = 3.0  # default playback speed
+
+# Direction → PIL rotation angle (counter-clockwise degrees).
+# Turtle sprites face NORTH by default (matching PIXI rotation=0 → N).
+_DIR_TO_ANGLE: Dict[str, int] = {'n': 0, 'e': -90, 's': 180, 'w': 90, 'o': 0}
+
+# Attack/shockwave ring colour: light grey for same-owner, white for multi-owner
+_EXPLOSION_RGB_DEFAULT = (0xFF, 0xFF, 0xFF)
 
 # Per-player sprite prefixes (Turtles theme, default)
 _PLAYER_SPRITE_NAMES = ['green', 'red', 'yellow', 'purple']
@@ -155,6 +166,7 @@ class SpriteCache:
         self._raw_bases: List[Optional[Image.Image]] = []
         self._raw_halo: Optional[Image.Image] = None
         self._ship_cache: dict = {}
+        self._rotated_cache: dict = {}
         self._base_cache: dict = {}
         self._halo_cache: dict = {}
         self._load_raw()
@@ -187,6 +199,24 @@ class SpriteCache:
             sprites = self._raw_ships[player % len(self._raw_ships)]
             self._ship_cache[key] = self._resize(sprites[level], size)
         return self._ship_cache[key]
+
+    def ship_rotated(self, player: int, energy: int, max_energy: int,
+                     cell_size: int, angle: int) -> Optional[Image.Image]:
+        """Return the ship sprite rotated by *angle* degrees (PIL CCW convention)."""
+        f = energy / max_energy if max_energy > 0 else 0
+        level = 0 if f < 0.25 else (1 if f < 0.75 else 2)
+        size = max(1, int(1.5 * cell_size))
+        key = (player, level, size, angle)
+        if key not in self._rotated_cache:
+            base = self.ship(player, energy, max_energy, cell_size)
+            if base is None:
+                self._rotated_cache[key] = None
+            elif angle == 0:
+                self._rotated_cache[key] = base
+            else:
+                self._rotated_cache[key] = base.rotate(angle, expand=True,
+                                                        resample=Image.BILINEAR)
+        return self._rotated_cache[key]
 
     def base(self, player: int, cell_size: int, is_dropoff: bool = False) -> Optional[Image.Image]:
         scale = 1.5 if is_dropoff else 2.0
@@ -318,9 +348,106 @@ def build_display_states(replay: dict) -> List[dict]:
             'energy': dict(energy),
             'turn': turn_idx,
             'events': list(frame.get('events', [])),
+            'moves': {},  # filled in post-processing pass below
         })
 
+    # Post-processing: attach moves that transition state[i] → state[i+1]
+    # Those moves live in full_frames[i+1] (they execute AT turn i+1,
+    # sliding ships from state[i] positions to state[i+1] positions).
+    for i in range(len(display_states)):
+        frame_idx = i + 1
+        if frame_idx < len(full_frames):
+            display_states[i]['moves'] = _parse_moves(
+                full_frames[frame_idx].get('moves', {}))
+
     return display_states
+
+
+def _parse_moves(raw_moves: dict) -> Dict[int, Dict[int, str]]:
+    """Convert replay moves dict to {player_id: {ship_id: direction}} mapping."""
+    moves: Dict[int, Dict[int, str]] = {}
+    for pid_str, cmds in raw_moves.items():
+        pid = int(pid_str)
+        moves[pid] = {}
+        if isinstance(cmds, list):
+            for cmd in cmds:
+                if cmd.get('type') == 'm':
+                    moves[pid][int(cmd['id'])] = cmd.get('direction', 'o')
+                elif cmd.get('type') == 'c' and 'id' in cmd:
+                    moves[pid][int(cmd['id'])] = 'o'
+        elif isinstance(cmds, dict):
+            for _k, cmd in cmds.items():
+                if cmd.get('type') == 'm':
+                    moves[pid][int(cmd['id'])] = cmd.get('direction', 'o')
+                elif cmd.get('type') == 'c' and 'id' in cmd:
+                    moves[pid][int(cmd['id'])] = 'o'
+    return moves
+
+
+def _cubic_ease(t: float) -> float:
+    """Cubic ease-in-out matching sprite.js interpolation logic."""
+    s = t / 0.5
+    if s < 1:
+        return s * s * s / 2
+    s -= 2
+    return (s * s * s + 2) / 2
+
+
+def _draw_event_rings(img: Image.Image, events: list, cell_size: int,
+                      time: float) -> None:
+    """
+    Draw shockwave rings for shipwreck/spawn events onto *img* (in-place).
+    Ring expands and fades as time goes 0→1 (mimics PIXI ShockwaveFilter).
+    """
+    overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    drew_any = False
+
+    for evt in events:
+        etype = evt.get('type', '')
+        if etype not in ('shipwreck', 'spawn'):
+            continue
+        loc = evt.get('location')
+        if not loc:
+            continue
+        ex, ey = loc['x'], loc['y']
+        cx = ex * cell_size + cell_size // 2
+        cy = ey * cell_size + cell_size // 2
+
+        # Expanding ring
+        ring_r = max(2, int((0.3 + time * 2.2) * cell_size))
+        ring_alpha = int((1.0 - time) * 230)
+        if ring_alpha <= 0:
+            continue
+
+        # Colour: white for multi-player collision; player colour for same-owner
+        if etype == 'spawn':
+            color_rgb = (255, 255, 255)
+        else:
+            ships_data = evt.get('ships', [])
+            owners = {s.get('owner') for s in ships_data if 'owner' in s}
+            if len(owners) != 1:
+                color_rgb = (255, 255, 255)
+            else:
+                c = _PLAYER_COLORS_HEX[next(iter(owners)) % len(_PLAYER_COLORS_HEX)]
+                color_rgb = _hex_to_rgb(c)
+
+        ring_width = max(2, cell_size // 3)
+        box = (cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r)
+        draw.ellipse(box, outline=(*color_rgb, ring_alpha), width=ring_width)
+
+        # Inner glow that fades quickly
+        if time < 0.4:
+            glow_r = max(1, int(cell_size * 0.45))
+            glow_alpha = int((1.0 - time / 0.4) * 180)
+            gb = (cx - glow_r, cy - glow_r, cx + glow_r, cy + glow_r)
+            draw.ellipse(gb, fill=(*color_rgb, glow_alpha))
+
+        drew_any = True
+
+    if drew_any:
+        composited = Image.alpha_composite(img.convert('RGBA'), overlay)
+        img.paste(composited.convert('RGB'), (0, 0))
 
 
 # ---------------------------------------------------------------------------
@@ -329,10 +456,13 @@ def build_display_states(replay: dict) -> List[dict]:
 
 def render_frame(state: dict, map_w: int, map_h: int,
                  cell_size: int, max_production: int,
-                 sprites: SpriteCache, max_energy: int = 1000) -> Image.Image:
+                 sprites: SpriteCache, max_energy: int = 1000,
+                 time: float = 0.0,
+                 next_state: Optional[dict] = None) -> Image.Image:
     """
     Render a single display state to a PIL Image.
-    Closely matches the visual output of libhaliteviz's TheSea/Turtles theme.
+    *time* (0.0–1.0): sub-frame position for smooth interpolation.
+    *next_state*: required when time > 0 for ship position interpolation.
     """
     pw = map_w * cell_size
     ph = map_h * cell_size
@@ -354,8 +484,6 @@ def render_frame(state: dict, map_w: int, map_h: int,
             cy = y * cell_size + cell_size // 2
             x0 = cx - side // 2
             y0 = cy - side // 2
-            x1 = x0 + side
-            y1 = y0 + side
             cell_img = Image.new('RGB', (side, side), rgb)
             img.paste(cell_img, (x0, y0))
 
@@ -372,24 +500,59 @@ def render_frame(state: dict, map_w: int, map_h: int,
             oy = cy - spr.height // 2
             img.paste(spr, (ox, oy), mask=spr)
 
+    # --- Event animations (shockwave rings for shipwreck / spawn) ---
+    events = state.get('events', [])
+    if events:
+        _draw_event_rings(img, events, cell_size, time)
+
+    # --- Cubic ease-in-out for sub-frame ship interpolation ---
+    interp_t = 0.0
+    if time > 0.0 and next_state is not None:
+        interp_t = _cubic_ease(min(1.0, time))
+
     # --- Ships ---
+    moves = state.get('moves', {})
     for pid, ship_dict in state['ships'].items():
+        pid_moves = moves.get(pid, {})
+        next_ships = next_state['ships'].get(pid, {}) if next_state else {}
+
         for sid, ship in ship_dict.items():
+            # Compute draw position (interpolate toward next_state)
+            draw_x = float(ship['x'])
+            draw_y = float(ship['y'])
+            if interp_t > 0.0 and sid in next_ships:
+                ns = next_ships[sid]
+                dx = ns['x'] - ship['x']
+                dy = ns['y'] - ship['y']
+                # Wraparound correction
+                if dx > map_w // 2:
+                    dx -= map_w
+                elif dx < -(map_w // 2):
+                    dx += map_w
+                if dy > map_h // 2:
+                    dy -= map_h
+                elif dy < -(map_h // 2):
+                    dy += map_h
+                draw_x = ship['x'] + dx * interp_t
+                draw_y = ship['y'] + dy * interp_t
+
+            cx = int(draw_x * cell_size + cell_size // 2)
+            cy = int(draw_y * cell_size + cell_size // 2)
+
             # Halo for inspired ships
             if ship.get('is_inspired'):
                 halo = sprites.halo(cell_size)
                 if halo is not None:
-                    cx = ship['x'] * cell_size + cell_size // 2
-                    cy = ship['y'] * cell_size + cell_size // 2
                     ox = cx - halo.width // 2
                     oy = cy - halo.height // 2
                     img.paste(halo, (ox, oy), mask=halo)
 
-            spr = sprites.ship(pid, ship['energy'], max_energy, cell_size)
+            # Ship sprite with rotation toward movement direction
+            direction = pid_moves.get(sid, 'o')
+            angle = _DIR_TO_ANGLE.get(direction, 0)
+            spr = sprites.ship_rotated(pid, ship['energy'], max_energy, cell_size, angle)
             if spr is None:
                 continue
-            cx = ship['x'] * cell_size + cell_size // 2
-            cy = ship['y'] * cell_size + cell_size // 2
             ox = cx - spr.width // 2
             oy = cy - spr.height // 2
             img.paste(spr, (ox, oy), mask=spr)
@@ -428,7 +591,8 @@ class HaliteViewer:
         self.current = 0
         self.playing = False
         self._after_id: Optional[str] = None
-        self.play_speed_ms = 120
+        self.subframe_time: float = 0.0
+        self.turns_per_second: float = TURNS_PER_SEC_DEFAULT
         self._tk_image: Optional[ImageTk.PhotoImage] = None
 
         self._build_ui()
@@ -506,15 +670,20 @@ class HaliteViewer:
 
     # ------------------------------------------------------------------ Drawing
 
-    def _draw_state(self, idx: int):
+    def _draw_state(self, idx: int, subframe: float = 0.0):
         idx = max(0, min(idx, self.num_states - 1))
         self.current = idx
         state = self.display_states[idx]
+
+        next_state = None
+        if subframe > 0.0 and idx + 1 < self.num_states:
+            next_state = self.display_states[idx + 1]
 
         pil_img = render_frame(
             state, self.map_w, self.map_h,
             self.cell_size, self.max_production,
             self.sprites, self.max_energy,
+            time=subframe, next_state=next_state,
         )
         # Keep a reference so tkinter doesn't garbage-collect it
         self._tk_image = ImageTk.PhotoImage(pil_img)
@@ -555,9 +724,9 @@ class HaliteViewer:
             self._draw_state(idx)
 
     def _on_speed(self, value):
-        # Invert: slider right = faster = fewer ms
+        # Map slider 20→600 to turns_per_second 0.3→12
         v = float(value)
-        self.play_speed_ms = max(20, int(620 - v))
+        self.turns_per_second = max(0.3, v / 50.0)
 
     def _on_wheel(self, event):
         delta = -1 if event.delta > 0 else 1
@@ -574,6 +743,8 @@ class HaliteViewer:
 
     def _play(self):
         if self.current >= self.num_states - 1:
+            self.current = 0
+            self.subframe_time = 0.0
             self._draw_state(0)
         self.playing = True
         self.play_btn.config(text='⏸')
@@ -581,6 +752,7 @@ class HaliteViewer:
 
     def _pause(self):
         self.playing = False
+        self.subframe_time = 0.0
         self.play_btn.config(text='▶')
         if self._after_id is not None:
             self.root.after_cancel(self._after_id)
@@ -588,7 +760,7 @@ class HaliteViewer:
 
     def _schedule_next(self):
         if self.playing:
-            self._after_id = self.root.after(self.play_speed_ms, self._play_step)
+            self._after_id = self.root.after(TICK_MS, self._play_step)
 
     def _play_step(self):
         self._after_id = None
@@ -597,7 +769,18 @@ class HaliteViewer:
         if self.current >= self.num_states - 1:
             self._pause()
             return
-        self._draw_state(self.current + 1)
+        # Advance subframe by turns_per_second × tick duration
+        self.subframe_time += TICK_MS / 1000.0 * self.turns_per_second
+        while self.subframe_time >= 1.0:
+            self.subframe_time -= 1.0
+            self.current += 1
+            if self.current >= self.num_states - 1:
+                self.current = self.num_states - 1
+                self.subframe_time = 0.0
+                self._draw_state(self.current)
+                self._pause()
+                return
+        self._draw_state(self.current, subframe=self.subframe_time)
         self._schedule_next()
 
 
