@@ -4,6 +4,27 @@ Gym-style Halite III environment for RL training.
 The learning agent controls player 0; all other players use a scripted
 opponent policy (random, greedy, or idle).
 
+Collision prevention (applied every step before commands are sent)
+------------------------------------------------------------------
+Phase 1 – Build enemy threat zone: each enemy's cell + its 4 neighbours.
+Phase 2 – Compute each ship's destination from its resolved primitive action.
+Phase 3a – Ships whose destination is inside the threat zone are forced STAY.
+Phase 3b – Ships already sitting at a threat-zone cell that are staying get an
+           escape route: the first adjacent cell outside the threat zone.
+Phase 4  – Friendly cascade: stayers own their cell; movers must yield.
+           Heaviest mover wins when multiple movers compete for an empty cell.
+           Iterated up to N times (N = number of ships) for convergence.
+
+Spawn guard
+-----------
+A spawn command is suppressed if the factory cell or any of its 4 adjacent
+cells is occupied by a friendly ship.
+
+Home memory
+-----------
+A ship with cargo ≥ 60 % of MAX_HALITE is added to _homing_ships and stays
+there until _home_dir() returns ACTION_STAY (ship arrived at deposit).
+
 Usage
 -----
     env = HaliteEnv(width=32, height=32)
