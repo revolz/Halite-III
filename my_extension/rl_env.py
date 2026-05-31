@@ -57,12 +57,10 @@ class HaliteEnv:
     Observation  {ship_id: (spatial float32[W,W,C], scalars float32[S])}
     Action       {ship_id: int in [0, N_SHIP_ACTIONS)}
                    0=Stay/Mine  1=N  2=E  3=S  4=W  5=RANDOM  6=HOME
-    Reward       (per step, per ship averaged)
-                   + halite deposited this turn                  (primary signal)
-                   + stay_scale × (1−cargo) if STAY and mined   (mine when empty)
-                   + home_scale × cargo if HOME                  (return when full)
-                   + explore_scale if RANDOM and bank_stuck      (break loops)
-                   − collision_scale × (1+cargo) per p0 ship destroyed  (avoid crashes)
+    Reward       (per step)
+                   + sum(cargo_after − cargo_before) for each surviving ship
+                   + halite deposited this turn   (so depositing ships aren't penalised)
+                   − (collision_scale + cargo_lost) for each p0 ship destroyed
     Done         turn >= max_turns  or  engine._game_ended()
     """
 
@@ -73,10 +71,6 @@ class HaliteEnv:
         num_players:        int  = 2,
         seed:               Optional[int] = None,
         opponent_policy:    str  = 'greedy',
-        stay_scale:         float = 1.0,
-        home_scale:         float = 2.0,
-        explore_scale:      float = 0.5,
-        explore_window:     int   = 30,
         collision_scale:    float = 20.0,
     ):
         self.width           = width
@@ -84,10 +78,6 @@ class HaliteEnv:
         self.num_players     = num_players
         self._seed           = seed
         self.opponent_policy = opponent_policy
-        self.stay_scale      = stay_scale
-        self.home_scale      = home_scale
-        self.explore_scale   = explore_scale
-        self.explore_window  = explore_window
         self.collision_scale = collision_scale
         self.engine: Optional[HaliteEngine] = None
 
@@ -106,11 +96,8 @@ class HaliteEnv:
 
         # Track deposited halite across steps
         self._prev_deposited = {pid: 0 for pid in self.engine.players}
-        # Track cargo per ship for per-action shaping (snapshot at start of each turn)
+        # Cargo snapshot at start of each turn (for reward calculation)
         self._prev_cargo: Dict[int, int] = {}
-        # Track when bank last grew (for explore bonus)
-        self._last_deposit_turn: int = 0
-        self._bank_at_check: int = 0
         # Ships currently committed to going home (memory mechanism)
         self._homing_ships: set = set()
 
@@ -173,60 +160,37 @@ class HaliteEnv:
                 eng._ships_peak[pid] = n
 
         # ------------------------------------------------------------------
-        # Reward
+        # Reward  (v8: per-ship cargo delta + deposited − collision penalty)
         # ------------------------------------------------------------------
 
-        # Snapshot cargo BEFORE overwriting _prev_cargo (gives cargo at
-        # the time each ship decided its action this turn).
+        # Cargo snapshot at start of this turn (set in previous step / reset)
         turn_start_cargo = self._prev_cargo
+        # Update for next turn
         self._prev_cargo = {sid: eng.entities[sid]['cargo']
                             for sid in eng.player_entities[0]}
 
-        # 1. Deposit reward: halite actually banked this turn (primary signal).
-        deposited_now  = eng._total_deposited.get(0, 0)
-        deposit_reward = float(deposited_now - self._prev_deposited[0])
+        # 1. Sum of (cargo_after − cargo_before) for all surviving ships.
+        #    Positive when mining, negative when paying movement costs.
+        reward = 0.0
+        for sid, cargo_after in self._prev_cargo.items():
+            cargo_before = turn_start_cargo.get(sid, 0)
+            reward += cargo_after - cargo_before
+
+        # 2. Add halite deposited this turn so depositing ships aren't penalised.
+        #    (cargo drops by X when depositing, but bank gains X — net zero for deposit)
+        deposited_now = eng._total_deposited.get(0, 0)
+        deposited_this_turn = float(deposited_now - self._prev_deposited[0])
         self._prev_deposited[0] = deposited_now
+        reward += deposited_this_turn
 
-        # Update bank-stuck tracker
-        if deposited_now > self._bank_at_check:
-            self._last_deposit_turn = eng.turn
-            self._bank_at_check     = deposited_now
-        bank_stuck = (eng.turn - self._last_deposit_turn) >= self.explore_window
-
-        # 2. Per-action state-based shaping.
-        #    Uses intent_actions (post-memory-override, pre-direction-resolution)
-        #    so HOME reward fires on memory-driven turns too.
-        #    STAY  → reward only if ship actually mined this turn (cargo increased).
-        #            Scales with empty cargo — encourages mining when hold is empty.
-        #            Guard against factory-camping hack: sitting on a cell with no
-        #            halite gives zero cargo gain → zero stay reward.
-        #    HOME  → reward scales with full cargo (encourage returning when full)
-        #    RANDOM → exploration bonus when bank is stuck
-        action_reward = 0.0
-        n_acting = max(1, len(intent_actions))
-        for sid, action in intent_actions.items():
-            cargo_pre_raw = turn_start_cargo.get(sid, 0)
-            cargo_pre     = cargo_pre_raw / MAX_HALITE  # 0–1
-            if action == ACTION_STAY:
-                # Only reward if the ship actually mined something this turn
-                cargo_post_raw = self._prev_cargo.get(sid, cargo_pre_raw)
-                if cargo_post_raw > cargo_pre_raw:
-                    action_reward += self.stay_scale * max(0.0, 1.0 - cargo_pre)
-            elif action == ACTION_HOME:
-                action_reward += self.home_scale * cargo_pre
-            elif action == ACTION_RANDOM and bank_stuck:
-                action_reward += self.explore_scale
-
-        # 3. Collision penalty: penalise every p0 ship destroyed this turn.
-        #    Scales with lost cargo so the bot learns cargo loss is doubly bad.
-        p0_ships_before = set(pre_p0_cargo.keys())
-        destroyed_p0    = p0_ships_before - set(eng.player_entities[0].keys())
+        # 3. Collision penalty: fixed cost + full cargo lost for every p0 ship destroyed.
+        p0_ships_before   = set(pre_p0_cargo.keys())
+        destroyed_p0      = p0_ships_before - set(eng.player_entities[0].keys())
         collision_penalty = sum(
-            self.collision_scale * (1.0 + pre_p0_cargo[sid] / MAX_HALITE)
+            self.collision_scale + pre_p0_cargo[sid]
             for sid in destroyed_p0
         )
-
-        reward = deposit_reward + action_reward / n_acting - collision_penalty
+        reward -= collision_penalty
 
         # ------------------------------------------------------------------
         # Done
