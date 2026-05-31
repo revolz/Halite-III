@@ -282,32 +282,44 @@ class HaliteEnv:
                     self._homing_ships.discard(ship_id)
             resolved_prims[ship_id] = action
 
-        # Stagger homing ships: if multiple p0 ships would arrive at the same
-        # deposit cell this turn they'd collide.  Keep the heaviest-cargo ship
-        # moving; delay the rest (ACTION_STAY for this turn, retry next turn).
+        # Safety override: prevent ships moving into collisions.
+        # Covers two cases in one pass:
+        #   (a) Destination is current enemy ship position → STAY
+        #   (b) Two friendly ships target the same cell → heaviest keeps going, others wait
+        #   (c) Deposit stagger: same cell as own deposit handled by (b)
         _dir_delta = {
             ACTION_STAY: (0, 0), ACTION_NORTH: (0, -1), ACTION_SOUTH: (0, 1),
             ACTION_EAST: (1, 0), ACTION_WEST: (-1, 0),
         }
-        my_deposits = {eng.players[0]['factory']}
-        for _did, dx, dy in eng.players[0]['dropoffs']:
-            my_deposits.add((dx, dy))
+        enemy_positions = set()
+        for pid in range(1, eng.num_players):
+            for _, epos in eng.player_entities[pid].items():
+                enemy_positions.add(epos)
 
-        deposit_arrivals: Dict[tuple, list] = {}
+        dest_map: Dict[int, tuple] = {}   # ship_id → destination cell
         for sid, prim in resolved_prims.items():
             sx, sy = eng.player_entities[0][sid]
             ddx, ddy = _dir_delta[prim]
-            dest = ((sx + ddx) % W, (sy + ddy) % H)
-            if dest in my_deposits:
-                deposit_arrivals.setdefault(dest, []).append(
+            dest_map[sid] = ((sx + ddx) % W, (sy + ddy) % H)
+
+        # (a) Enemy at destination → override to STAY
+        for sid, dest in dest_map.items():
+            if dest in enemy_positions:
+                resolved_prims[sid] = ACTION_STAY
+                dest_map[sid] = eng.player_entities[0][sid]   # update to current pos
+
+        # (b) Multiple friendlies targeting same cell → heaviest keeps going
+        cell_arrivals: Dict[tuple, list] = {}
+        for sid, dest in dest_map.items():
+            if dest != eng.player_entities[0][sid]:   # only ships that are actually moving
+                cell_arrivals.setdefault(dest, []).append(
                     (eng.entities[sid]['cargo'], sid)
                 )
-
-        for dest, arrivals in deposit_arrivals.items():
+        for dest, arrivals in cell_arrivals.items():
             if len(arrivals) > 1:
                 arrivals.sort(reverse=True)   # heaviest cargo gets priority
                 for _, sid in arrivals[1:]:
-                    resolved_prims[sid] = ACTION_STAY   # wait one turn
+                    resolved_prims[sid] = ACTION_STAY
 
         tokens = [f"m {sid} {ACTION_TO_DIR[prim]}" for sid, prim in resolved_prims.items()]
         if spawn and eng.players[0]['energy'] >= SHIP_COST:
