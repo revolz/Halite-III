@@ -151,7 +151,59 @@ Columns: `episode`, `reward`, `avg100_reward`, `elapsed_sec`
 
 ---
 
-## 5. Extract imitation learning data from replays
+## 5. Evaluate a trained checkpoint
+
+Measure how good a checkpoint is: runs N complete games vs a scripted opponent and
+reports win rate, mean halite, and halite-per-turn.
+
+```bash
+# 20 games vs the greedy bot (default)
+python rl_eval.py --model checkpoints\model_final_weights.pt --games 20
+
+# Compare two checkpoints (run separately and compare win rates)
+python rl_eval.py --model checkpoints\model_ep500_weights.pt  --games 20
+python rl_eval.py --model checkpoints\model_ep1000_weights.pt --games 20
+
+# Use deterministic (greedy) actions for a fair upper-bound estimate
+python rl_eval.py --model checkpoints\model_final_weights.pt --games 20 --deterministic
+
+# Against idle opponent (useful early in training when bot hasn't beaten greedy yet)
+python rl_eval.py --model checkpoints\model_ep100_weights.pt --games 20 --opponent idle
+
+# Reproducible evaluation (fixed seed)
+python rl_eval.py --model checkpoints\model_final_weights.pt --games 20 --seed 42
+```
+
+### rl_eval.py options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | *(required)* | Path to `*_weights.pt` or full `.pt` checkpoint |
+| `--games` | 20 | Number of games to run |
+| `--opponent` | `greedy` | `greedy`, `idle`, or `random` |
+| `--deterministic` | off | Greedy actions (no sampling) — best for benchmarking |
+| `--width` / `--height` | 32 | Map dimensions |
+| `--device` | `cpu` | `cpu` or `cuda` |
+| `--seed` | *(random)* | Base seed (game i uses seed+i) |
+
+### Sample output
+
+```
+Game   RL halite  Opp halite  Result  Turns  Hal/Turn
+----------------------------------------------------------
+    1       4230        2180      RL    400      10.6
+    2       3910        3100      RL    400       9.8
+    ...
+Results over 20 games:
+  Win rate     : 75.0%  (15W / 1T / 4L)
+  Mean halite  : RL=3840  vs  Opp=2650
+  Halite/turn  : 9.6
+  RL advantage : +1190 halite on average
+```
+
+---
+
+## 6. Extract imitation learning data from replays
 
 Pre-train the bot by learning from existing replay files before running PPO.
 
@@ -167,7 +219,7 @@ Each `.npz` file contains: `obs_spatial`, `obs_scalars`, `actions`, `turns`, `sh
 
 ---
 
-## 6. Play with the trained RL bot
+## 7. Play with the trained RL bot
 
 ### Run the RL bot against the starter-kit bot
 
@@ -196,7 +248,7 @@ python run_game.py \
 
 ---
 
-## 7. Typical workflow
+## 8. Typical workflow
 
 ```
 1. Run a few games to generate replays:
@@ -208,15 +260,18 @@ python run_game.py \
 3. Phase 1 — train against idle opponent until reward is positive:
    python rl_train.py --episodes 1000 --checkpoint-dir checkpoints --opponent-policy idle
 
-4. Phase 2 — resume against greedy opponent:
+4. Evaluate Phase 1 progress:
+   python rl_eval.py --model checkpoints\model_ep1000_weights.pt --games 20 --opponent idle
+
+5. Phase 2 — resume against greedy opponent:
    python rl_train.py --resume checkpoints\model_ep1000.pt --start-episode 1001 --episodes 1000 --checkpoint-dir checkpoints --opponent-policy greedy
 
-5. Monitor training_log.csv to watch reward improve.
+6. Evaluate Phase 2 progress:
+   python rl_eval.py --model checkpoints\model_ep2000_weights.pt --games 20 --opponent greedy
 
-6. Test a checkpoint against the scripted bot:
-   python run_game.py --bot "python rl_bot.py --model checkpoints\model_ep500_weights.pt" --bot "..\starter_kits\Python3\MyBot.py" --verbose
+7. Monitor training_log.csv to watch reward improve.
 
-7. Resume if you want to keep training:
+8. Resume if you want to keep training:
    python rl_train.py --resume checkpoints\model_ep2000.pt --start-episode 2001 --episodes 1000 --checkpoint-dir checkpoints
 ```
 
