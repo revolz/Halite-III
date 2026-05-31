@@ -50,7 +50,8 @@ DEFAULTS = dict(
     lam                 = 0.95,    # GAE lambda
     clip_eps            = 0.2,
     vf_coef             = 0.5,
-    ent_coef            = 0.01,
+    ent_coef            = 0.05,    # entropy bonus weight — higher = more exploration (was 0.01)
+    ent_floor           = 0.5,     # nats — hard minimum entropy; prevents total policy collapse
     lr                  = 3e-4,
     n_epochs            = 4,
     minibatch_size      = 64,
@@ -262,7 +263,8 @@ class PPOTrainer:
     # PPO update
     # ------------------------------------------------------------------
 
-    def _ppo_update(self, trajectories: List[ShipTrajectory]):
+    def _ppo_update(self, trajectories: List[ShipTrajectory]) -> float:
+        """Run PPO update and return mean policy entropy (nats) for logging."""
         cfg = self.cfg
 
         # Flatten all trajectories into arrays
@@ -278,7 +280,7 @@ class PPOTrainer:
             all_lp .extend(traj.log_probs)
 
         if not all_sp:
-            return
+            return 0.0
 
         sp_t  = torch.tensor(np.array(all_sp),  dtype=torch.float32, device=self.device)
         sc_t  = torch.tensor(np.array(all_sc),  dtype=torch.float32, device=self.device)
@@ -293,6 +295,10 @@ class PPOTrainer:
         N  = len(all_sp)
         bs = cfg['minibatch_size']
 
+        ent_floor   = cfg.get('ent_floor', 0.5)
+        total_ent   = 0.0
+        total_steps = 0
+
         for _ in range(cfg['n_epochs']):
             idx = torch.randperm(N, device=self.device)
             for start in range(0, N, bs):
@@ -306,7 +312,11 @@ class PPOTrainer:
                 pg_loss   = torch.max(pg_loss1, pg_loss2).mean()
 
                 vf_loss   = F.mse_loss(val, ret_t[mb])
-                ent_loss  = -ent.mean()
+
+                # Entropy floor: if mean entropy is below the floor, the penalty
+                # is proportionally larger, pushing the policy back toward exploration.
+                mean_ent  = ent.mean()
+                ent_loss  = -torch.clamp(mean_ent, min=torch.tensor(ent_floor, device=self.device))
 
                 loss = pg_loss + cfg['vf_coef'] * vf_loss + cfg['ent_coef'] * ent_loss
 
@@ -314,6 +324,11 @@ class PPOTrainer:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), cfg['max_grad_norm'])
                 self.optim.step()
+
+                total_ent   += mean_ent.item() * mb.shape[0]
+                total_steps += mb.shape[0]
+
+        return total_ent / max(total_steps, 1)
 
     # ------------------------------------------------------------------
     # Main training loop
@@ -344,21 +359,21 @@ class PPOTrainer:
         log_file   = open(log_path, 'a', newline='')
         log_writer = csv.writer(log_file)
         if not log_exists:
-            log_writer.writerow(['episode', 'reward', 'avg100_reward', 'elapsed_sec'])
+            log_writer.writerow(['episode', 'reward', 'avg100_reward', 'mean_entropy', 'elapsed_sec'])
 
         for ep in range(start_ep, total_eps + 1):
             trajectories, ep_reward = self._collect_episode(env)
-            self._ppo_update(trajectories)
+            mean_ent = self._ppo_update(trajectories)
             self._episode_rewards.append(ep_reward)
             mean_r  = sum(self._episode_rewards) / len(self._episode_rewards)
             elapsed = time.time() - start_time
 
-            log_writer.writerow([ep, f'{ep_reward:.2f}', f'{mean_r:.2f}', f'{elapsed:.1f}'])
+            log_writer.writerow([ep, f'{ep_reward:.2f}', f'{mean_r:.2f}', f'{mean_ent:.3f}', f'{elapsed:.1f}'])
             log_file.flush()
 
             if ep % 10 == 0:
                 print(f"Episode {ep:5d} | reward {ep_reward:8.1f} | "
-                      f"avg100 {mean_r:8.1f} | {elapsed:.0f}s")
+                      f"avg100 {mean_r:8.1f} | entropy {mean_ent:.3f} | {elapsed:.0f}s")
 
             if ep % cfg['checkpoint_interval'] == 0:
                 path = os.path.join(cfg['checkpoint_dir'], f'model_ep{ep}.pt')
