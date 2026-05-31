@@ -283,9 +283,15 @@ class HaliteEnv:
                 dest_map[sid] = eng.player_entities[0][sid]
 
         # (b) Friendly collision resolution: no two of our ships may share a final cell.
-        # Iterates until stable to handle cascades (a forced STAY may expose a new conflict).
+        # Rules (in priority order):
+        #   1. A ship already AT a cell (stayer: dest == current_pos) owns that cell.
+        #      Any mover trying to enter it is forced to STAY.
+        #   2. When multiple ships all MOVE to the same unoccupied cell (no stayer),
+        #      the heaviest wins; the rest are forced to STAY.
+        # Iterates until stable because a forced STAY creates a new stayer that can
+        # block other ships aiming for that same cell in the next pass.
         ship_list = list(resolved_prims.keys())
-        for _ in range(len(ship_list)):   # at most N iterations
+        for _ in range(len(ship_list)):
             pos_occupants: Dict[tuple, list] = {}
             for sid in ship_list:
                 pos_occupants.setdefault(dest_map[sid], []).append(
@@ -293,13 +299,25 @@ class HaliteEnv:
                 )
             changed = False
             for dest, occupants in pos_occupants.items():
-                if len(occupants) > 1:
-                    occupants.sort(reverse=True)   # heaviest keeps its move
-                    for _, sid in occupants[1:]:
-                        if resolved_prims[sid] != ACTION_STAY:
-                            resolved_prims[sid] = ACTION_STAY
-                            dest_map[sid] = eng.player_entities[0][sid]
-                            changed = True
+                if len(occupants) <= 1:
+                    continue
+                stayers = [(c, sid) for c, sid in occupants
+                           if dest == eng.player_entities[0][sid]]
+                movers  = [(c, sid) for c, sid in occupants
+                           if dest != eng.player_entities[0][sid]]
+                if stayers:
+                    # Cell is already occupied — every mover must stay put.
+                    for _, sid in movers:
+                        resolved_prims[sid] = ACTION_STAY
+                        dest_map[sid] = eng.player_entities[0][sid]
+                        changed = True
+                elif len(movers) > 1:
+                    # All movers compete for an empty cell — heaviest wins.
+                    movers.sort(reverse=True)
+                    for _, sid in movers[1:]:
+                        resolved_prims[sid] = ACTION_STAY
+                        dest_map[sid] = eng.player_entities[0][sid]
+                        changed = True
             if not changed:
                 break
 
