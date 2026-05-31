@@ -68,6 +68,7 @@ DEFAULTS = dict(
     home_scale          = 2.0,     # reward for HOME action scaled by (cargo/MAX)
     explore_scale       = 0.5,     # reward for RANDOM action when bank is stuck
     explore_window      = 30,      # turns without a deposit before bank is "stuck"
+    collision_scale     = 50.0,    # penalty per p0 ship destroyed; scales with cargo
 )
 
 
@@ -346,10 +347,11 @@ class PPOTrainer:
             num_players      = cfg['num_players'],
             seed             = cfg['seed'],
             opponent_policy  = cfg.get('opponent_policy', 'idle'),
-            stay_scale       = cfg.get('stay_scale',    1.0),
-            home_scale       = cfg.get('home_scale',    2.0),
-            explore_scale    = cfg.get('explore_scale', 0.5),
-            explore_window   = cfg.get('explore_window', 30),
+            stay_scale       = cfg.get('stay_scale',       1.0),
+            home_scale       = cfg.get('home_scale',       2.0),
+            explore_scale    = cfg.get('explore_scale',    0.5),
+            explore_window   = cfg.get('explore_window',   30),
+            collision_scale  = cfg.get('collision_scale',  50.0),
         )
 
         start_ep   = cfg.get('start_episode', 1)
