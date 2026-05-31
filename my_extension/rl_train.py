@@ -66,6 +66,7 @@ DEFAULTS = dict(
     opponent_policy     = 'idle',  # 'idle' for early training, 'greedy' for harder challenge
     death_penalty_scale = 0.5,     # weight on cargo lost when a ship dies (proportional, not flat)
     cargo_reward_scale  = 0.3,     # weight on per-turn cargo-gained reward (dense signal)
+    return_reward_scale = 0.05,    # weight on approach-toward-deposit shaping reward
 )
 
 
@@ -346,6 +347,7 @@ class PPOTrainer:
             opponent_policy     = cfg.get('opponent_policy', 'idle'),
             death_penalty_scale = cfg.get('death_penalty_scale', 0.5),
             cargo_reward_scale  = cfg.get('cargo_reward_scale', 0.3),
+            return_reward_scale = cfg.get('return_reward_scale', 0.05),
         )
 
         start_ep   = cfg.get('start_episode', 1)

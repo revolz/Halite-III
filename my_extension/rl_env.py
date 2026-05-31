@@ -35,6 +35,7 @@ from rl_features import (
     torus_dist,
     ACTION_TO_DIR,
     N_SHIP_ACTIONS,
+    _nearest_deposit,
 )
 
 # ---------------------------------------------------------------------------
@@ -66,6 +67,7 @@ class HaliteEnv:
         opponent_policy:    str  = 'greedy',
         death_penalty_scale: float = 0.5,
         cargo_reward_scale: float = 0.3,
+        return_reward_scale: float = 0.05,
     ):
         self.width               = width
         self.height              = height
@@ -74,6 +76,7 @@ class HaliteEnv:
         self.opponent_policy     = opponent_policy
         self.death_penalty_scale = death_penalty_scale
         self.cargo_reward_scale  = cargo_reward_scale
+        self.return_reward_scale = return_reward_scale
         self.engine: Optional[HaliteEngine] = None
 
     # ------------------------------------------------------------------
@@ -93,6 +96,10 @@ class HaliteEnv:
         self._prev_deposited = {pid: 0 for pid in self.engine.players}
         # Track cargo per ship for dense mining reward
         self._prev_cargo: Dict[int, int] = {}
+        # Track each ship's distance to nearest deposit for approach shaping
+        self._prev_dists: Dict[int, float] = {
+            sid: 0.0 for sid in self.engine.player_entities[0]
+        }
 
         # Pre-compute inspiration for turn-0 state (no ships → no-op but correct)
         self.engine._update_inspiration()
@@ -189,6 +196,24 @@ class HaliteEnv:
         reward = (deposit_reward
                   + self.cargo_reward_scale * cargo_gained
                   - self.death_penalty_scale * cargo_lost)
+
+        # 4. Return-shaping reward: credit ships for moving toward the nearest
+        #    deposit structure when holding cargo.  Positive when the ship
+        #    moved closer; negative when it moved farther away.  Magnitude
+        #    scales with cargo so the signal is only strong enough to overcome
+        #    mining incentives when the ship is nearly full.
+        if self.return_reward_scale > 0:
+            approach_reward = 0.0
+            new_dists: Dict[int, float] = {}
+            for sid, (sx, sy) in eng.player_entities[0].items():
+                nx, ny = _nearest_deposit(sx, sy, eng, 0)
+                new_dists[sid] = float(torus_dist(sx, sy, nx, ny, eng.width, eng.height))
+                prev_d  = self._prev_dists.get(sid, 0.0)
+                cargo_p = float(turn_start_cargo.get(sid, 0))
+                if cargo_p > 0:
+                    approach_reward += cargo_p * (prev_d - new_dists[sid]) * self.return_reward_scale
+            self._prev_dists = new_dists
+            reward += approach_reward
 
         # ------------------------------------------------------------------
         # Done
