@@ -317,19 +317,26 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
             ship_resolved.append((ship, action_idx))
 
         # Safety override pass: prevent ships moving into collisions.
-        # (a) Enemy at destination (current position) → STAY
+        # (a) Destination in enemy threat zone (current cell + 4 neighbors) → STAY
+        #     Catches both "enemy stays" and "enemy moves into same cell" cases.
         # (b) Multiple friendlies target same cell → heaviest keeps going, others STAY
         W, H = gmap.width, gmap.height
         _dir_delta = {
             ACTION_STAY:  (0, 0),  ACTION_NORTH: (0, -1), ACTION_SOUTH: (0, 1),
             ACTION_EAST:  (1, 0),  ACTION_WEST:  (-1, 0),
         }
+        _neighbor_deltas = [(0, 0), (0, -1), (0, 1), (1, 0), (-1, 0)]
 
-        enemy_positions: set = set()
+        # Build threat zone: every cell an enemy occupies or could reach in one step
+        enemy_threat_zone: set = set()
         for pid, player in game.players.items():
             if pid != me.id:
                 for s in player.get_ships():
-                    enemy_positions.add(s.position)
+                    ex, ey = s.position.x, s.position.y
+                    for ddx, ddy in _neighbor_deltas:
+                        enemy_threat_zone.add(Position(
+                            (ex + ddx) % W, (ey + ddy) % H
+                        ))
 
         # Compute destinations
         dest_of: dict = {}   # ship.id → Position
@@ -340,24 +347,32 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
                 (ship.position.y + ddy) % H
             )
 
-        # (a) Override ships heading into enemy positions
+        # (a) Override ships heading into enemy threat zone
         overridden_act = {ship.id: act for ship, act in ship_resolved}
         for ship, act in ship_resolved:
-            if dest_of[ship.id] in enemy_positions:
+            if dest_of[ship.id] in enemy_threat_zone:
                 overridden_act[ship.id] = ACTION_STAY
                 dest_of[ship.id] = ship.position
 
-        # (b) Multiple friendlies targeting same cell → heaviest keeps going
-        cell_arrivals: dict = {}
-        for ship, _ in ship_resolved:
-            dest = dest_of[ship.id]
-            if dest != ship.position:   # only ships that are actually moving
-                cell_arrivals.setdefault(dest, []).append((ship.halite_amount, ship.id))
-        for dest, arrivals in cell_arrivals.items():
-            if len(arrivals) > 1:
-                arrivals.sort(reverse=True)   # heaviest cargo gets priority
-                for _, sid in arrivals[1:]:
-                    overridden_act[sid] = ACTION_STAY
+        # (b) Friendly collision resolution: no two ships may share a final cell.
+        # Iterates until stable so cascading conflicts are all resolved.
+        ship_pos = {ship.id: ship.position for ship, _ in ship_resolved}
+        for _ in range(len(ship_resolved)):
+            pos_occupants: dict = {}
+            for ship, _ in ship_resolved:
+                fp = dest_of[ship.id]
+                pos_occupants.setdefault(fp, []).append((ship.halite_amount, ship.id))
+            changed = False
+            for dest, occupants in pos_occupants.items():
+                if len(occupants) > 1:
+                    occupants.sort(reverse=True)
+                    for _, sid in occupants[1:]:
+                        if overridden_act[sid] != ACTION_STAY:
+                            overridden_act[sid] = ACTION_STAY
+                            dest_of[sid] = ship_pos[sid]
+                            changed = True
+            if not changed:
+                break
 
         commands = []
         dir_map = {'n': Direction.North, 's': Direction.South,
