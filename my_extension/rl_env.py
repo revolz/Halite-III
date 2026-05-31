@@ -183,17 +183,24 @@ class HaliteEnv:
         bank_stuck = (eng.turn - self._last_deposit_turn) >= self.explore_window
 
         # 2. Per-action state-based shaping.
-        #    STAY  → reward scales with empty cargo  (encourage mining when empty)
-        #    HOME  → reward scales with full cargo   (encourage returning when full)
+        #    STAY  → reward only if ship actually mined this turn (cargo increased).
+        #            Scales with empty cargo — encourages mining when hold is empty.
+        #            Guard against factory-camping hack: sitting on a cell with no
+        #            halite gives zero cargo gain → zero stay reward.
+        #    HOME  → reward scales with full cargo (encourage returning when full)
         #    RANDOM → exploration bonus when bank is stuck
         action_reward = 0.0
         n_acting = max(1, len(ship_actions))
         for sid, action in ship_actions.items():
             if sid not in eng.player_entities[0] and sid not in pre_ship_owners:
                 continue
-            cargo_pre = float(turn_start_cargo.get(sid, 0)) / MAX_HALITE  # 0–1
+            cargo_pre_raw = turn_start_cargo.get(sid, 0)
+            cargo_pre     = cargo_pre_raw / MAX_HALITE  # 0–1
             if action == ACTION_STAY:
-                action_reward += self.stay_scale * max(0.0, 1.0 - cargo_pre)
+                # Only reward if the ship actually mined something this turn
+                cargo_post_raw = self._prev_cargo.get(sid, cargo_pre_raw)
+                if cargo_post_raw > cargo_pre_raw:
+                    action_reward += self.stay_scale * max(0.0, 1.0 - cargo_pre)
             elif action == ACTION_HOME:
                 action_reward += self.home_scale * cargo_pre
             elif action == ACTION_RANDOM and bank_stuck:
