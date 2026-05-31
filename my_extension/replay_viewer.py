@@ -293,6 +293,7 @@ def build_display_states(replay: dict) -> List[dict]:
         'energy': dict(energy),
         'turn': 0,
         'events': [],
+        'ship_owner_map': {},
     }]
 
     # Build running halite map by applying cell deltas per frame
@@ -341,6 +342,14 @@ def build_display_states(replay: dict) -> List[dict]:
                     'is_inspired': sdata.get('is_inspired', False),
                 }
 
+        # Build ship_id→owner map from THIS frame's entities (before the turn runs).
+        # These are exactly the ships that may appear in collision events for this turn.
+        prev_ents = frame.get('entities', {})
+        ship_owner_map: Dict[int, int] = {}
+        for pid_str, ship_dict in prev_ents.items():
+            for sid_str in ship_dict:
+                ship_owner_map[int(sid_str)] = int(pid_str)
+
         display_states.append({
             'halite_map': [row[:] for row in halite_map],
             'ships': ships,
@@ -349,6 +358,7 @@ def build_display_states(replay: dict) -> List[dict]:
             'turn': turn_idx,
             'events': list(frame.get('events', [])),
             'moves': {},  # filled in post-processing pass below
+            'ship_owner_map': ship_owner_map,  # ship_id→owner for event colouring
         })
 
     # Post-processing: attach moves that transition state[i] → state[i+1]
@@ -394,10 +404,15 @@ def _cubic_ease(t: float) -> float:
 
 
 def _draw_event_rings(img: Image.Image, events: list, cell_size: int,
-                      time: float) -> None:
+                      time: float, ship_owner_map: Optional[Dict[int, int]] = None) -> None:
     """
     Draw shockwave rings for shipwreck/spawn events onto *img* (in-place).
     Ring expands and fades as time goes 0→1 (mimics PIXI ShockwaveFilter).
+
+    *ship_owner_map*: {ship_id: player_id} built from state['ships'] so we can
+    colour single-owner collisions with the player colour.
+    The underlying replay format stores ships as bare integer IDs (matching the
+    original C++ CollisionEvent::to_json which serialises vector<Entity::id_type>).
     """
     overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -424,19 +439,18 @@ def _draw_event_rings(img: Image.Image, events: list, cell_size: int,
         if etype == 'spawn':
             color_rgb = (255, 255, 255)
         else:
-            ships_data = evt.get('ships', [])
-            # ships_data may be [{id, owner}, ...] or [int, ...] (legacy)
-            owners = set()
-            for s in ships_data:
-                if isinstance(s, dict):
-                    if 'owner' in s:
-                        owners.add(s['owner'])
-                # integer ship IDs carry no owner info; treat as unknown
-            if len(owners) != 1:
-                color_rgb = (255, 255, 255)
-            else:
+            # ships field = list of bare integer ship IDs (original C++ format)
+            ship_ids = evt.get('ships', [])
+            owners: set = set()
+            if ship_owner_map:
+                for sid in ship_ids:
+                    if isinstance(sid, int) and sid in ship_owner_map:
+                        owners.add(ship_owner_map[sid])
+            if len(owners) == 1:
                 c = _PLAYER_COLORS_HEX[next(iter(owners)) % len(_PLAYER_COLORS_HEX)]
                 color_rgb = _hex_to_rgb(c)
+            else:
+                color_rgb = (255, 255, 255)
 
         ring_width = max(2, cell_size // 3)
         box = (cx - ring_r, cy - ring_r, cx + ring_r, cy + ring_r)
@@ -509,7 +523,10 @@ def render_frame(state: dict, map_w: int, map_h: int,
     # --- Event animations (shockwave rings for shipwreck / spawn) ---
     events = state.get('events', [])
     if events:
-        _draw_event_rings(img, events, cell_size, time)
+        # ship_owner_map built at parse-time from entities at START of this turn,
+        # so it contains the ships that may have collided (bare int IDs per C++ format).
+        _draw_event_rings(img, events, cell_size, time,
+                          state.get('ship_owner_map', {}))
 
     # --- Cubic ease-in-out for sub-frame ship interpolation ---
     interp_t = 0.0
