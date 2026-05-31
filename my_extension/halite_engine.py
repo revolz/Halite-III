@@ -774,8 +774,7 @@ class HaliteEngine:
                 self._current_events.append({
                     'type': 'shipwreck',
                     'location': {'x': dest[0], 'y': dest[1]},
-                    'ships': [{'id': eid, 'owner': self.entities[eid]['owner']}
-                              for eid in arrivals],
+                    'ships': list(arrivals),
                 })
                 for eid in arrivals:
                     owner = self.entities[eid]['owner']
@@ -845,8 +844,7 @@ class HaliteEngine:
                 self._current_events.append({
                     'type': 'shipwreck',
                     'location': {'x': fx, 'y': fy},
-                    'ships': [{'id': new_eid, 'owner': pid},
-                              {'id': existing, 'owner': existing_owner}],
+                    'ships': [new_eid, existing],
                 })
                 self._all_collisions[pid] += 1
                 self._all_collisions[existing_owner] += 1
