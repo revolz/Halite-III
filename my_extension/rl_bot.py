@@ -362,7 +362,13 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
                 dest_of[ship.id] = ship.position
 
         # (b) Friendly collision resolution: no two ships may share a final cell.
-        # Iterates until stable so cascading conflicts are all resolved.
+        # Rules (in priority order):
+        #   1. A ship already AT a cell (stayer: dest == current_pos) owns that cell.
+        #      Any mover trying to enter it is forced to STAY.
+        #   2. When multiple ships all MOVE to the same unoccupied cell (no stayer),
+        #      the heaviest wins; the rest are forced to STAY.
+        # Iterates until stable because a forced STAY creates a new stayer that can
+        # block other ships aiming for that same cell in the next pass.
         ship_pos = {ship.id: ship.position for ship, _ in ship_resolved}
         for _ in range(len(ship_resolved)):
             pos_occupants: dict = {}
@@ -371,13 +377,23 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
                 pos_occupants.setdefault(fp, []).append((ship.halite_amount, ship.id))
             changed = False
             for dest, occupants in pos_occupants.items():
-                if len(occupants) > 1:
-                    occupants.sort(reverse=True)
-                    for _, sid in occupants[1:]:
-                        if overridden_act[sid] != ACTION_STAY:
-                            overridden_act[sid] = ACTION_STAY
-                            dest_of[sid] = ship_pos[sid]
-                            changed = True
+                if len(occupants) <= 1:
+                    continue
+                stayers = [(c, sid) for c, sid in occupants if dest == ship_pos[sid]]
+                movers  = [(c, sid) for c, sid in occupants if dest != ship_pos[sid]]
+                if stayers:
+                    # Cell is already occupied — every mover must stay put.
+                    for _, sid in movers:
+                        overridden_act[sid] = ACTION_STAY
+                        dest_of[sid] = ship_pos[sid]
+                        changed = True
+                elif len(movers) > 1:
+                    # All movers compete for an empty cell — heaviest wins.
+                    movers.sort(reverse=True)
+                    for _, sid in movers[1:]:
+                        overridden_act[sid] = ACTION_STAY
+                        dest_of[sid] = ship_pos[sid]
+                        changed = True
             if not changed:
                 break
 
