@@ -250,46 +250,57 @@ class HaliteEnv:
                     self._homing_ships.discard(ship_id)
             resolved_prims[ship_id] = action
 
-        # Safety override: prevent ships moving into collisions.
-        # Covers three cases in one pass:
-        #   (a) Destination is within enemy threat zone (current cell + all 4 neighbors)
-        #       → catches both "enemy stays put" and "enemy moves toward same cell"
-        #   (b) Two friendly ships target the same cell → heaviest keeps going, others wait
-        #   (c) Deposit stagger: same cell as own deposit handled by (b)
+        # ── Safety override: 4-phase collision prevention ────────────────────
         _dir_delta = {
             ACTION_STAY: (0, 0), ACTION_NORTH: (0, -1), ACTION_SOUTH: (0, 1),
             ACTION_EAST: (1, 0), ACTION_WEST: (-1, 0),
         }
-        _neighbor_deltas = [(0, 0), (0, -1), (0, 1), (1, 0), (-1, 0)]
+        # Cardinal-only deltas with their corresponding action index.
+        _cardinal = [(0, -1, ACTION_NORTH), (1, 0, ACTION_EAST),
+                     (0,  1, ACTION_SOUTH), (-1, 0, ACTION_WEST)]
 
-        # Build threat zone: every cell an enemy occupies or could move into next turn
-        enemy_threat_zone = set()
+        # Phase 1 — Build enemy threat zone.
+        # Covers "enemy stays" AND "enemy moves adjacent": current + 4 neighbours.
+        enemy_threat_zone: set = set()
         for pid in range(1, eng.num_players):
             for _, epos in eng.player_entities[pid].items():
                 ex, ey = epos
-                for ddx, ddy in _neighbor_deltas:
+                enemy_threat_zone.add((ex, ey))
+                for ddx, ddy, _ in _cardinal:
                     enemy_threat_zone.add(((ex + ddx) % W, (ey + ddy) % H))
 
-        dest_map: Dict[int, tuple] = {}   # ship_id → destination cell
+        # Phase 2 — Compute initial destinations from resolved primitive actions.
+        dest_map: Dict[int, tuple] = {}
         for sid, prim in resolved_prims.items():
             sx, sy = eng.player_entities[0][sid]
             ddx, ddy = _dir_delta[prim]
             dest_map[sid] = ((sx + ddx) % W, (sy + ddy) % H)
 
-        # (a) Destination in enemy threat zone → override to STAY
-        for sid, dest in list(dest_map.items()):
-            if dest in enemy_threat_zone:
+        # Phase 3a — Enemy avoidance (MOVE): ships heading into threat zone → STAY.
+        for sid in list(resolved_prims.keys()):
+            if dest_map[sid] in enemy_threat_zone:
                 resolved_prims[sid] = ACTION_STAY
                 dest_map[sid] = eng.player_entities[0][sid]
 
-        # (b) Friendly collision resolution: no two of our ships may share a final cell.
-        # Rules (in priority order):
-        #   1. A ship already AT a cell (stayer: dest == current_pos) owns that cell.
-        #      Any mover trying to enter it is forced to STAY.
-        #   2. When multiple ships all MOVE to the same unoccupied cell (no stayer),
-        #      the heaviest wins; the rest are forced to STAY.
-        # Iterates until stable because a forced STAY creates a new stayer that can
-        # block other ships aiming for that same cell in the next pass.
+        # Phase 3b — Enemy avoidance (ESCAPE): a ship already at a threat-zone cell
+        # while staying there risks collision if an adjacent enemy moves in.
+        # Try to move to any safe adjacent cell instead of staying in the danger zone.
+        for sid in list(resolved_prims.keys()):
+            sx, sy = eng.player_entities[0][sid]
+            if resolved_prims[sid] == ACTION_STAY and (sx, sy) in enemy_threat_zone:
+                for ddx, ddy, act in _cardinal:
+                    esc = ((sx + ddx) % W, (sy + ddy) % H)
+                    if esc not in enemy_threat_zone:
+                        resolved_prims[sid] = act
+                        dest_map[sid] = esc
+                        break   # first safe direction wins; cascade handles friendlies
+
+        # Phase 4 — Friendly collision resolution: no two ships may share a final cell.
+        # Rules (applied via cascade until stable):
+        #   Stayer (dest == current_pos) owns that cell — every mover is forced STAY.
+        #   Multiple movers to same empty cell → heaviest mover wins, rest STAY.
+        # A forced STAY creates a new stayer, potentially blocking another ship;
+        # iterating up to N times guarantees convergence for any chain of N ships.
         ship_list = list(resolved_prims.keys())
         for _ in range(len(ship_list)):
             pos_occupants: Dict[tuple, list] = {}
@@ -306,13 +317,11 @@ class HaliteEnv:
                 movers  = [(c, sid) for c, sid in occupants
                            if dest != eng.player_entities[0][sid]]
                 if stayers:
-                    # Cell is already occupied — every mover must stay put.
                     for _, sid in movers:
                         resolved_prims[sid] = ACTION_STAY
                         dest_map[sid] = eng.player_entities[0][sid]
                         changed = True
                 elif len(movers) > 1:
-                    # All movers compete for an empty cell — heaviest wins.
                     movers.sort(reverse=True)
                     for _, sid in movers[1:]:
                         resolved_prims[sid] = ACTION_STAY
