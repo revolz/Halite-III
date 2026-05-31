@@ -18,6 +18,7 @@ Usage
 import argparse
 import math
 import os
+import random
 import sys
 from typing import Dict, List, Tuple
 
@@ -34,6 +35,8 @@ from rl_model    import ActorCritic
 from rl_features import (
     WINDOW_SIZE, N_SPATIAL_CHANNELS, N_SCALAR_FEATURES, N_SHIP_ACTIONS,
     ACTION_TO_DIR, DIR_TO_ACTION, torus_dist, torus_delta,
+    ACTION_STAY, ACTION_NORTH, ACTION_SOUTH, ACTION_EAST, ACTION_WEST,
+    ACTION_RANDOM, ACTION_HOME,
 )
 
 import hlt
@@ -228,9 +231,23 @@ def extract_scalars_hlt(
     ], dtype=np.float32)
 
 
-# ---------------------------------------------------------------------------
-# Spawn heuristic
-# ---------------------------------------------------------------------------
+def _home_dir_hlt(ship, game: hlt.Game, me) -> int:
+    """Return the primitive action index (0–4) that moves one step toward
+    the nearest deposit structure (shipyard or dropoff)."""
+    gmap   = game.game_map
+    W, H   = gmap.width, gmap.height
+    near   = _nearest_deposit(ship.position, game, me)
+    sx, sy = ship.position.x, ship.position.y
+    if ship.position == near:
+        return ACTION_STAY
+    dx, dy = torus_delta(sx, sy, near.x, near.y, W, H)
+    if abs(dx) >= abs(dy):
+        return ACTION_EAST if dx > 0 else ACTION_WEST
+    else:
+        return ACTION_NORTH if dy < 0 else ACTION_SOUTH
+
+
+
 
 def _should_spawn(game: hlt.Game, me, max_fleet: int = 12) -> bool:
     """Heuristic: spawn if affordable, fleet is small, and not too late."""
@@ -276,6 +293,12 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
                 action_idx = model.greedy_action(sp_t, sc_t)
             else:
                 action_idx, _, _ = model.select_action(sp_t, sc_t)
+
+            # Resolve meta-actions to primitives (same logic as rl_env.py)
+            if action_idx == ACTION_RANDOM:
+                action_idx = random.randint(0, 4)
+            elif action_idx == ACTION_HOME:
+                action_idx = _home_dir_hlt(ship, game, me)
 
             direction_str = ACTION_TO_DIR[action_idx]
 
