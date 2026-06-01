@@ -5,6 +5,9 @@ Usage
 -----
     python rl_train.py --episodes 2000 --checkpoint-dir checkpoints/
 
+    # Continue training from the last saved checkpoint (episode auto-detected):
+    python rl_train.py --resume checkpoints_v9/model_final.pt --episodes 2000 --checkpoint-dir checkpoints_v9/
+
 Each episode:
   1. A fresh game is initialised via HaliteEnv.
   2. All player-0 ships are stepped; each produces a (obs, action, reward, …) tuple.
@@ -442,6 +445,19 @@ def main():
 
     args = parser.parse_args()
     cfg  = {k: getattr(args, k.replace('-', '_')) for k in DEFAULTS}
+
+    # Auto-detect start episode from checkpoint when --resume is given without
+    # an explicit --start-episode.  Reads the 'episode' field saved in the
+    # full checkpoint dict and continues from the next episode automatically.
+    if cfg.get('resume') and cfg['start_episode'] == DEFAULTS['start_episode']:
+        ckpt_path = cfg['resume']
+        if os.path.isfile(ckpt_path):
+            probe = torch.load(ckpt_path, map_location='cpu')
+            if isinstance(probe, dict) and 'episode' in probe:
+                saved_ep = probe['episode']
+                cfg['start_episode'] = saved_ep + 1
+                print(f"[Auto-resume] Detected last episode {saved_ep} in {ckpt_path}")
+                print(f"[Auto-resume] Continuing from episode {cfg['start_episode']}")
 
     trainer = PPOTrainer(cfg)
     trainer.train()
