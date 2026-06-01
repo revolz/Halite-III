@@ -65,6 +65,11 @@ TURNS_PER_SEC_DEFAULT = 3.0  # default playback speed
 # Turtle sprites face NORTH by default (matching PIXI rotation=0 → N).
 _DIR_TO_ANGLE: Dict[str, int] = {'n': 0, 'e': -90, 's': 180, 'w': 90, 'o': 0}
 
+# Human-readable direction labels
+_DIR_LABELS: Dict[str, str] = {
+    'n': '▲ North', 's': '▼ South', 'e': '▶ East', 'w': '◀ West', 'o': '● Stay (mine)',
+}
+
 # Attack/shockwave ring colour: light grey for same-owner, white for multi-owner
 _EXPLOSION_RGB_DEFAULT = (0xFF, 0xFF, 0xFF)
 
@@ -707,6 +712,23 @@ class HaliteViewer:
         self.root.bind('<Home>',  lambda e: self._go_first())
         self.root.bind('<End>',   lambda e: self._go_last())
         self.canvas.bind('<MouseWheel>', self._on_wheel)
+        self.canvas.bind('<Motion>',     self._on_canvas_motion)
+        self.canvas.bind('<Leave>',      lambda e: self._hide_tooltip())
+
+        # Floating tooltip window (hidden until a ship is hovered)
+        self._tooltip_win = tk.Toplevel(self.root)
+        self._tooltip_win.wm_overrideredirect(True)   # no title bar / border
+        self._tooltip_win.withdraw()
+        self._tooltip_lbl = tk.Label(
+            self._tooltip_win,
+            text='', justify=tk.LEFT, anchor=tk.NW,
+            bg='#1a1e3a', fg=TEXT_COLOR,
+            font=('Consolas', 10),
+            padx=8, pady=6,
+            relief=tk.SOLID, bd=1,
+        )
+        self._tooltip_lbl.pack()
+        self._last_tooltip_cell: Optional[Tuple[int, int]] = None
 
     # ------------------------------------------------------------------ Drawing
 
@@ -729,15 +751,75 @@ class HaliteViewer:
         self._tk_image = ImageTk.PhotoImage(pil_img)
         self.canvas.itemconfig(self._img_item, image=self._tk_image)
 
-        # Update scores
+        # Update scores (halite bank + ship count)
         for pid, lbl in self.score_labels.items():
             e = state['energy'].get(pid, 0)
             name = self.player_names.get(pid, f'P{pid}')
-            lbl.config(text=f'{name}: {e:,}')
+            n_ships = len(state['ships'].get(pid, {}))
+            lbl.config(text=f'{name}: {e:,} halite | {n_ships} ship{"s" if n_ships != 1 else ""}')
 
         total = self.num_states - 1
         self.turn_label.config(text=f'Turn {state["turn"]}/{total}')
         self.slider.set(idx)
+
+    # ------------------------------------------------------------------ Tooltip
+
+    def _on_canvas_motion(self, event):
+        """Show a floating tooltip with ship info when hovering over a ship."""
+        cx = event.x // self.cell_size
+        cy = event.y // self.cell_size
+        cell = (cx, cy)
+
+        # Avoid re-computing if still on the same cell
+        if cell == self._last_tooltip_cell:
+            return
+        self._last_tooltip_cell = cell
+
+        state = self.display_states[self.current]
+        moves = state.get('moves', {})
+
+        # Search all ships for one at this map cell
+        found = None
+        for pid, ship_dict in state['ships'].items():
+            for sid, ship in ship_dict.items():
+                if ship['x'] == cx and ship['y'] == cy:
+                    found = (pid, sid, ship)
+                    break
+            if found:
+                break
+
+        if found is None:
+            self._hide_tooltip()
+            return
+
+        pid, sid, ship = found
+        name = self.player_names.get(pid, f'P{pid}')
+        direction = moves.get(pid, {}).get(sid, 'o')
+        dir_label = _DIR_LABELS.get(direction, direction)
+        cargo = ship['energy']
+        cargo_pct = int(100 * cargo / max(1, self.max_energy))
+        inspired = '⚡ Yes' if ship.get('is_inspired') else 'No'
+        color = PLAYER_COLORS[pid % len(PLAYER_COLORS)]
+
+        text = (
+            f'Ship #{sid}\n'
+            f'Owner:   {name}  (P{pid})\n'
+            f'Cargo:   {cargo:,} / {self.max_energy:,}  ({cargo_pct}%)\n'
+            f'Action:  {dir_label}\n'
+            f'Inspired:{inspired}'
+        )
+        self._tooltip_lbl.config(text=text, fg=color)
+
+        # Position tooltip near cursor (but keep it on-screen)
+        win_x = self.root.winfo_rootx() + event.x + 16
+        win_y = self.root.winfo_rooty() + event.y + 16
+        self._tooltip_win.wm_geometry(f'+{win_x}+{win_y}')
+        self._tooltip_win.deiconify()
+        self._tooltip_win.lift()
+
+    def _hide_tooltip(self):
+        self._tooltip_win.withdraw()
+        self._last_tooltip_cell = None
 
     # ------------------------------------------------------------------ Navigation
 
