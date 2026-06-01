@@ -452,6 +452,7 @@ starterpackages/
 
 *.hlt
 !interestingGame.hlt
+!my_extension/replays/*.hlt
 
 google*.html
 
