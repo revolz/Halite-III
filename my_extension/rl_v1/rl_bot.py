@@ -29,10 +29,10 @@ Each turn the bot:
 Usage
 -----
     # Run via the engine or run_game.py:
-    python rl_bot.py --model checkpoints/model_final_weights.pt
+    python rl_bot.py --model checkpoints_v9/model_final_weights.pt
 
-    # Register with run_game.py:
-    python run_game.py --bot "python my_extension/rl_bot.py --model checkpoints/model_final_weights.pt"
+    # Register with run_game.py (from repo root):
+    python my_extension/run_game.py --bot "python my_extension/rl_v1/rl_bot.py --model my_extension/rl_v1/checkpoints_v9/model_final_weights.pt"
 """
 
 import argparse
@@ -45,10 +45,12 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 # ── path setup ────────────────────────────────────────────────────────────
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_ROOT = os.path.dirname(_HERE)
+_HERE      = os.path.dirname(os.path.abspath(__file__))   # rl_v1/
+_MY_EXT    = os.path.dirname(_HERE)                        # my_extension/
+_REPO_ROOT = os.path.dirname(_MY_EXT)                      # repo root
 sys.path.insert(0, _HERE)
-sys.path.insert(0, os.path.join(_ROOT, 'starter_kits', 'Python3'))
+sys.path.insert(0, _MY_EXT)                                # halite_engine.py
+sys.path.insert(0, os.path.join(_REPO_ROOT, 'starter_kits', 'Python3'))  # hlt
 
 import torch
 from rl_model    import ActorCritic

@@ -7,18 +7,18 @@ reports win rate, mean final halite, mean halite-per-turn, and a per-game table.
 Usage
 -----
     # Evaluate a weights file against the default greedy opponent
-    python rl_eval.py --model checkpoints\model_final_weights.pt --games 20
+    python rl_eval.py --model checkpoints_v9\model_final_weights.pt --games 20
 
     # Compare two checkpoints
-    python rl_eval.py --model checkpoints\model_ep500_weights.pt --games 20
-    python rl_eval.py --model checkpoints\model_ep1000_weights.pt --games 20
+    python rl_eval.py --model checkpoints_v9\model_ep500_weights.pt --games 20
+    python rl_eval.py --model checkpoints_v9\model_ep1000_weights.pt --games 20
 
     # Use deterministic (greedy) actions instead of sampling
-    python rl_eval.py --model checkpoints\model_final_weights.pt --games 20 --deterministic
+    python rl_eval.py --model checkpoints_v9\model_final_weights.pt --games 20 --deterministic
 
     # Change opponent
-    python rl_eval.py --model checkpoints\model_final_weights.pt --games 20 --opponent greedy
-    python rl_eval.py --model checkpoints\model_final_weights.pt --games 20 --opponent idle
+    python rl_eval.py --model checkpoints_v9\model_final_weights.pt --games 20 --opponent greedy
+    python rl_eval.py --model checkpoints_v9\model_final_weights.pt --games 20 --opponent idle
 """
 
 import argparse
@@ -30,7 +30,10 @@ from typing import Optional
 import torch
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(__file__))
+_HERE   = os.path.dirname(os.path.abspath(__file__))
+_MY_EXT = os.path.dirname(_HERE)
+sys.path.insert(0, _HERE)     # rl_v1/ — finds rl_env, rl_model
+sys.path.insert(0, _MY_EXT)  # my_extension/ — finds halite_engine
 
 from rl_env   import HaliteEnv
 from rl_model import ActorCritic

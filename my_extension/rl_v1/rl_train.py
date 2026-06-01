@@ -3,7 +3,7 @@ PPO training loop for Halite III with self-play opponent pool.
 
 Usage
 -----
-    python rl_train.py --episodes 2000 --checkpoint-dir checkpoints/
+    python rl_train.py --episodes 2000 --checkpoint-dir checkpoints_v9/
 
 Each episode:
   1. A fresh game is initialised via HaliteEnv.
@@ -35,7 +35,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-sys.path.insert(0, os.path.dirname(__file__))
+_HERE   = os.path.dirname(os.path.abspath(__file__))
+_MY_EXT = os.path.dirname(_HERE)
+sys.path.insert(0, _HERE)     # rl_v1/ — finds rl_env, rl_model, rl_features
+sys.path.insert(0, _MY_EXT)  # my_extension/ — finds halite_engine
 
 from rl_env   import HaliteEnv
 from rl_model import ActorCritic
