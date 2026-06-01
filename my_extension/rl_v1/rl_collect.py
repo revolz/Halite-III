@@ -31,7 +31,10 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(__file__))
+_HERE   = os.path.dirname(os.path.abspath(__file__))
+_MY_EXT = os.path.dirname(_HERE)
+sys.path.insert(0, _HERE)     # rl_v1/ — finds rl_features
+sys.path.insert(0, _MY_EXT)  # my_extension/ — finds halite_engine (if needed)
 
 from rl_features import (
     extract_spatial_from_replay_state,

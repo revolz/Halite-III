@@ -3,12 +3,15 @@ PPO training loop for Halite III with self-play opponent pool.
 
 Usage
 -----
-    python rl_train.py --episodes 2000 --checkpoint-dir checkpoints/
+    python rl_train.py --episodes 2000 --checkpoint-dir checkpoints_v9/
 
 Each episode:
   1. A fresh game is initialised via HaliteEnv.
   2. All player-0 ships are stepped; each produces a (obs, action, reward, …) tuple.
-  3. Team reward (halite deposited) is shared across all ships that turn.
+  3. Per-step reward (v8) = Σ(cargo_after − cargo_before) for surviving ships
+       + halite deposited this turn
+       − (collision_scale + cargo_lost) for every p0 ship destroyed.
+     This team reward is split equally across all ships that acted this step.
   4. After the episode, GAE advantages are computed per-ship trajectory.
   5. The policy is updated with PPO for n_epochs mini-batch passes.
   6. Every checkpoint_interval episodes the current weights are saved and
@@ -16,7 +19,8 @@ Each episode:
 
 Opponent pool
   Opponents load a random past checkpoint when one is available.
-  Before any checkpoints exist they use the built-in greedy scripted policy.
+  Before any checkpoints exist they use the built-in scripted policy
+  selected by --opponent-policy (idle / greedy / random).
 """
 
 import argparse
@@ -31,7 +35,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-sys.path.insert(0, os.path.dirname(__file__))
+_HERE   = os.path.dirname(os.path.abspath(__file__))
+_MY_EXT = os.path.dirname(_HERE)
+sys.path.insert(0, _HERE)     # rl_v1/ — finds rl_env, rl_model, rl_features
+sys.path.insert(0, _MY_EXT)  # my_extension/ — finds halite_engine
 
 from rl_env   import HaliteEnv
 from rl_model import ActorCritic
@@ -46,25 +53,26 @@ DEFAULTS = dict(
     height              = 32,
     num_players         = 2,
     episodes            = 2000,
-    gamma               = 0.99,
+    gamma               = 0.999,
     lam                 = 0.95,    # GAE lambda
     clip_eps            = 0.2,
     vf_coef             = 0.5,
-    ent_coef            = 0.01,
+    ent_coef            = 0.25,    # entropy bonus weight
+    ent_floor           = 0.5,     # nats — entropy floor threshold
+    ent_floor_coef      = 0.5,     # extra penalty when entropy < ent_floor
     lr                  = 3e-4,
-    n_epochs            = 4,
+    n_epochs            = 3,
     minibatch_size      = 64,
     max_grad_norm       = 0.5,
     checkpoint_interval = 50,
-    pool_size           = 10,      # max old checkpoints to keep
+    pool_size           = 10,
     checkpoint_dir      = 'checkpoints',
     device              = 'cpu',
     seed                = None,
-    resume              = None,    # path to .pt file to resume from
-    start_episode       = 1,       # episode number to start counting from (use with --resume)
-    opponent_policy     = 'idle',  # 'idle' for early training, 'greedy' for harder challenge
-    collision_penalty   = 10.0,    # penalty per ship lost (keep low to avoid discouraging movement)
-    cargo_reward_scale  = 0.3,     # weight on per-turn cargo-gained reward (dense signal)
+    resume              = None,
+    start_episode       = 1,
+    opponent_policy     = 'idle',
+    collision_scale     = 20.0,
 )
 
 
@@ -194,18 +202,20 @@ class PPOTrainer:
     # Episode collection
     # ------------------------------------------------------------------
 
-    def _collect_episode(self, env: HaliteEnv) -> Tuple[List[ShipTrajectory], float]:
+    def _collect_episode(self, env: HaliteEnv) -> Tuple[List[ShipTrajectory], float, List[int]]:
         """
         Run one complete game and collect per-ship trajectories.
 
         Returns
         -------
-        trajectories : list of ShipTrajectory (one per ship that lived ≥1 step)
-        ep_reward    : total reward accumulated by player 0 this episode
+        trajectories  : list of ShipTrajectory (one per ship that lived ≥1 step)
+        ep_reward     : total reward accumulated by player 0 this episode
+        action_counts : count of each action index chosen (len = N_SHIP_ACTIONS)
         """
         obs, _      = env.reset()
         done        = False
         ep_reward   = 0.0
+        action_counts = [0] * N_SHIP_ACTIONS
 
         # Active trajectories keyed by ship_id
         active: Dict[int, ShipTrajectory] = {}
@@ -224,6 +234,7 @@ class PPOTrainer:
                 sc_t  = torch.from_numpy(scalars).to(self.device)
                 action, log_prob, value = self.model.select_action(sp_t, sc_t)
                 ship_actions[ship_id]  = action
+                action_counts[action] += 1
 
                 # Store obs + selected action temporarily
                 active[ship_id].add(spatial, scalars, action, 0.0, value, log_prob, False)
@@ -256,13 +267,14 @@ class PPOTrainer:
                 traj.dones[-1] = True
             finished.append(traj)
 
-        return [t for t in finished if t.rewards], ep_reward
+        return [t for t in finished if t.rewards], ep_reward, action_counts
 
     # ------------------------------------------------------------------
     # PPO update
     # ------------------------------------------------------------------
 
-    def _ppo_update(self, trajectories: List[ShipTrajectory]):
+    def _ppo_update(self, trajectories: List[ShipTrajectory]) -> float:
+        """Run PPO update and return mean policy entropy (nats) for logging."""
         cfg = self.cfg
 
         # Flatten all trajectories into arrays
@@ -278,7 +290,7 @@ class PPOTrainer:
             all_lp .extend(traj.log_probs)
 
         if not all_sp:
-            return
+            return 0.0
 
         sp_t  = torch.tensor(np.array(all_sp),  dtype=torch.float32, device=self.device)
         sc_t  = torch.tensor(np.array(all_sc),  dtype=torch.float32, device=self.device)
@@ -293,6 +305,10 @@ class PPOTrainer:
         N  = len(all_sp)
         bs = cfg['minibatch_size']
 
+        ent_floor   = cfg.get('ent_floor', 0.5)
+        total_ent   = 0.0
+        total_steps = 0
+
         for _ in range(cfg['n_epochs']):
             idx = torch.randperm(N, device=self.device)
             for start in range(0, N, bs):
@@ -306,14 +322,29 @@ class PPOTrainer:
                 pg_loss   = torch.max(pg_loss1, pg_loss2).mean()
 
                 vf_loss   = F.mse_loss(val, ret_t[mb])
-                ent_loss  = -ent.mean()
 
-                loss = pg_loss + cfg['vf_coef'] * vf_loss + cfg['ent_coef'] * ent_loss
+                # Entropy loss:
+                #   - Always use raw mean_ent so gradient flows (clamp killed gradient).
+                #   - Add a separate relu-penalty when entropy is below the floor so
+                #     the policy is actively pushed back toward exploration.
+                #   - Combined gradient below floor = -(ent_coef + ent_floor_coef),
+                #     much stronger than ent_coef alone.
+                mean_ent    = ent.mean()
+                ent_loss    = -mean_ent
+                floor_deficit = F.relu(torch.tensor(ent_floor, dtype=torch.float32, device=self.device) - mean_ent)
+                floor_loss  = cfg.get('ent_floor_coef', 0.5) * floor_deficit
+
+                loss = pg_loss + cfg['vf_coef'] * vf_loss + cfg['ent_coef'] * ent_loss + floor_loss
 
                 self.optim.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), cfg['max_grad_norm'])
                 self.optim.step()
+
+                total_ent   += mean_ent.item() * mb.shape[0]
+                total_steps += mb.shape[0]
+
+        return total_ent / max(total_steps, 1)
 
     # ------------------------------------------------------------------
     # Main training loop
@@ -324,13 +355,12 @@ class PPOTrainer:
         os.makedirs(cfg['checkpoint_dir'], exist_ok=True)
 
         env = HaliteEnv(
-            width              = cfg['width'],
-            height             = cfg['height'],
-            num_players        = cfg['num_players'],
-            seed               = cfg['seed'],
-            opponent_policy    = cfg.get('opponent_policy', 'idle'),
-            collision_penalty  = cfg.get('collision_penalty', 10.0),
-            cargo_reward_scale = cfg.get('cargo_reward_scale', 0.3),
+            width            = cfg['width'],
+            height           = cfg['height'],
+            num_players      = cfg['num_players'],
+            seed             = cfg['seed'],
+            opponent_policy  = cfg.get('opponent_policy', 'idle'),
+            collision_scale  = cfg.get('collision_scale',  20.0),
         )
 
         start_ep   = cfg.get('start_episode', 1)
@@ -343,22 +373,32 @@ class PPOTrainer:
         log_exists = os.path.isfile(log_path)
         log_file   = open(log_path, 'a', newline='')
         log_writer = csv.writer(log_file)
+        _action_names = ['stay', 'north', 'east', 'south', 'west', 'random', 'home']
         if not log_exists:
-            log_writer.writerow(['episode', 'reward', 'avg100_reward', 'elapsed_sec'])
+            log_writer.writerow(['episode', 'reward', 'avg100_reward', 'deposited',
+                                 'mean_entropy', 'elapsed_sec'] + _action_names)
 
         for ep in range(start_ep, total_eps + 1):
-            trajectories, ep_reward = self._collect_episode(env)
-            self._ppo_update(trajectories)
+            trajectories, ep_reward, action_counts = self._collect_episode(env)
+            deposited = env.engine._total_deposited.get(0, 0)
+            mean_ent = self._ppo_update(trajectories)
             self._episode_rewards.append(ep_reward)
             mean_r  = sum(self._episode_rewards) / len(self._episode_rewards)
             elapsed = time.time() - start_time
 
-            log_writer.writerow([ep, f'{ep_reward:.2f}', f'{mean_r:.2f}', f'{elapsed:.1f}'])
+            total_acts = max(1, sum(action_counts))
+            act_pcts   = [c / total_acts for c in action_counts]
+
+            log_writer.writerow([ep, f'{ep_reward:.2f}', f'{mean_r:.2f}', deposited,
+                                  f'{mean_ent:.3f}', f'{elapsed:.1f}'] +
+                                 [f'{p:.3f}' for p in act_pcts])
             log_file.flush()
 
             if ep % 10 == 0:
+                act_str = ' '.join(f'{n[0]}={p:.0%}' for n, p in zip(_action_names, act_pcts))
                 print(f"Episode {ep:5d} | reward {ep_reward:8.1f} | "
-                      f"avg100 {mean_r:8.1f} | {elapsed:.0f}s")
+                      f"avg100 {mean_r:8.1f} | deposited {deposited:6d} | "
+                      f"entropy {mean_ent:.3f} | {act_str} | {elapsed:.0f}s")
 
             if ep % cfg['checkpoint_interval'] == 0:
                 path = os.path.join(cfg['checkpoint_dir'], f'model_ep{ep}.pt')

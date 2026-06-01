@@ -7,6 +7,7 @@ and a replay-state dict (for imitation learning data collection).
 Observation layout
 ------------------
 Spatial : float32[WINDOW_SIZE, WINDOW_SIZE, N_SPATIAL_CHANNELS]
+  Window is 5×5 (2-cell radius) centred on the observing ship.
   Ch 0 – cell halite / MAX_HALITE
   Ch 1 – my ship present (binary)
   Ch 2 – my ship cargo / MAX_HALITE
@@ -15,6 +16,9 @@ Spatial : float32[WINDOW_SIZE, WINDOW_SIZE, N_SPATIAL_CHANNELS]
   Ch 5 – opponent structures (binary)
   Ch 6 – inspired my-ship (binary)
   Ch 7 – 1 − dist_cell_to_nearest_deposit / max_dist   (per-cell)
+  Ch 8 – enemy ship cargo / MAX_HALITE (0 if no enemy here; 0 = kamikaze, 1 = safe)
+  Ch 9 – enemy danger zone: 1 if any enemy ship is ≤1 step from this cell
+  Ch 10 – friendly danger zone: 1 if any OTHER friendly ship is ≤1 step from this cell
 
 Scalars : float32[N_SCALAR_FEATURES]
   0  – turns remaining / max_turns
@@ -28,6 +32,18 @@ Scalars : float32[N_SCALAR_FEATURES]
   8  – toroidal dy to deposit / H
   9  – return-urgency flag (1 if turns_left ≤ dist × 1.5 + 1)
   10 – turns slack = (turns_left − dist_deposit) / max_turns
+  11 – enemy ships within 2 steps / 10
+  12 – other friendly ships within 2 steps / 10
+
+Actions
+-------
+  0 STAY   – stay and mine
+  1 NORTH  – move north
+  2 EAST   – move east
+  3 SOUTH  – move south
+  4 WEST   – move west
+  5 RANDOM – meta: environment picks a random primitive action (0–4)
+  6 HOME   – meta: environment moves one step toward nearest deposit
 """
 
 import numpy as np
@@ -37,9 +53,9 @@ from typing import Dict, List, Tuple
 # Observation shape constants
 # ---------------------------------------------------------------------------
 
-WINDOW_SIZE        = 11
-N_SPATIAL_CHANNELS = 8
-N_SCALAR_FEATURES  = 11
+WINDOW_SIZE        = 5
+N_SPATIAL_CHANNELS = 11
+N_SCALAR_FEATURES  = 13
 
 # ---------------------------------------------------------------------------
 # Action space
@@ -50,8 +66,10 @@ ACTION_NORTH = 1
 ACTION_EAST  = 2
 ACTION_SOUTH = 3
 ACTION_WEST  = 4
+ACTION_RANDOM = 5   # meta: resolved to random primitive at environment level
+ACTION_HOME   = 6   # meta: resolved to one step toward nearest deposit
 
-N_SHIP_ACTIONS = 5
+N_SHIP_ACTIONS = 7
 
 DIR_TO_ACTION = {
     'o': ACTION_STAY,
@@ -118,6 +136,23 @@ def extract_spatial_from_engine(engine, ship_id: int, pid: int = 0) -> np.ndarra
     for _did, dx, dy in engine.players[pid]['dropoffs']:
         my_deposits.add((dx, dy))
 
+    # Pre-compute 1-step reachable sets for danger-zone channels.
+    # For each ship, its current position and all 4 adjacent cells form the set
+    # of cells it could occupy after one move (including staying).
+    _adj = [(0, 0), (0, -1), (0, 1), (1, 0), (-1, 0)]  # stay + N/S/E/W
+
+    enemy_reachable: set = set()   # Ch 9: cells any enemy could reach in 1 step
+    friendly_reachable: set = set()  # Ch 10: cells any OTHER friendly could reach
+
+    for p in engine.player_entities:
+        for sid2, (ex, ey) in engine.player_entities[p].items():
+            if p != pid:
+                for ddx, ddy in _adj:
+                    enemy_reachable.add(((ex + ddx) % W, (ey + ddy) % H))
+            elif sid2 != ship_id:
+                for ddx, ddy in _adj:
+                    friendly_reachable.add(((ex + ddx) % W, (ey + ddy) % H))
+
     spatial = np.zeros((WINDOW_SIZE, WINDOW_SIZE, N_SPATIAL_CHANNELS), dtype=np.float32)
 
     for dy_off in range(-half, half + 1):
@@ -139,6 +174,8 @@ def extract_spatial_from_engine(engine, ship_id: int, pid: int = 0) -> np.ndarra
                         spatial[wy, wx, 6] = 1.0
                 else:
                     spatial[wy, wx, 3] = 1.0
+                    # Ch 8: enemy cargo tells how dangerous this enemy is
+                    spatial[wy, wx, 8] = engine.entities[sid2]['cargo'] / MAX_HALITE
 
             cell_owner = engine.cell_owner.get((cx, cy))
             if cell_owner == pid:
@@ -149,6 +186,12 @@ def extract_spatial_from_engine(engine, ship_id: int, pid: int = 0) -> np.ndarra
             # Per-cell distance to nearest deposit
             min_d = min(torus_dist(cx, cy, fx, fy, W, H) for fx, fy in my_deposits)
             spatial[wy, wx, 7] = 1.0 - (min_d / max_d)
+
+            # Ch 9/10: danger zones — cells reachable in 1 step by enemy/friendly
+            if (cx, cy) in enemy_reachable:
+                spatial[wy, wx, 9] = 1.0
+            if (cx, cy) in friendly_reachable:
+                spatial[wy, wx, 10] = 1.0
 
     return spatial
 
@@ -178,6 +221,18 @@ def extract_scalars_from_engine(engine, ship_id: int, pid: int = 0) -> np.ndarra
     opp_ships  = sum(len(engine.player_entities[p])
                      for p in range(engine.num_players) if p != pid)
 
+    # Proximity danger scalars: count ships within 2 toroidal steps
+    enemy_near   = 0
+    friendly_near = 0
+    for p in engine.player_entities:
+        for sid2, (ex, ey) in engine.player_entities[p].items():
+            d = torus_dist(sx, sy, ex, ey, W, H)
+            if d <= 2:
+                if p != pid:
+                    enemy_near += 1
+                elif sid2 != ship_id:
+                    friendly_near += 1
+
     return np.array([
         turns_left / engine.max_turns,
         engine.players[pid]['energy'] / MAX_HALITE,
@@ -190,6 +245,8 @@ def extract_scalars_from_engine(engine, ship_id: int, pid: int = 0) -> np.ndarra
         ddy / H,
         return_urgency,
         turns_slack,
+        enemy_near   / 10.0,
+        friendly_near / 10.0,
     ], dtype=np.float32)
 
 
@@ -236,6 +293,23 @@ def extract_spatial_from_replay_state(state: dict, ship_id: str, pid: int) -> np
         if p2 != pid:
             opp_structs.update(structs)
 
+    # Pre-compute 1-step reachable sets for danger-zone channels
+    _adj = [(0, 0), (0, -1), (0, 1), (1, 0), (-1, 0)]
+
+    enemy_reachable: set = set()
+    friendly_reachable: set = set()
+
+    for p_str, p_ents in state['entities'].items():
+        p2 = int(p_str)
+        for eid_str, edata in p_ents.items():
+            ex, ey = edata['x'], edata['y']
+            if p2 != pid:
+                for ddx, ddy in _adj:
+                    enemy_reachable.add(((ex + ddx) % W, (ey + ddy) % H))
+            elif eid_str != str(ship_id):
+                for ddx, ddy in _adj:
+                    friendly_reachable.add(((ex + ddx) % W, (ey + ddy) % H))
+
     spatial = np.zeros((WINDOW_SIZE, WINDOW_SIZE, N_SPATIAL_CHANNELS), dtype=np.float32)
 
     for dy_off in range(-half, half + 1):
@@ -257,6 +331,8 @@ def extract_spatial_from_replay_state(state: dict, ship_id: str, pid: int) -> np
                         spatial[wy, wx, 6] = 1.0
                 else:
                     spatial[wy, wx, 3] = 1.0
+                    # Ch 8: enemy cargo (0=kamikaze threat, 1=wants to go home)
+                    spatial[wy, wx, 8] = edata['energy'] / MAX_HALITE
 
             if (cx, cy) in my_structs:
                 spatial[wy, wx, 4] = 1.0 if (cx, cy) == my_factory else 0.5
@@ -266,6 +342,11 @@ def extract_spatial_from_replay_state(state: dict, ship_id: str, pid: int) -> np
             min_d = min(torus_dist(cx, cy, fx, fy, W, H) for fx, fy in my_structs) \
                     if my_structs else (W + H)
             spatial[wy, wx, 7] = 1.0 - (min_d / max_d)
+
+            if (cx, cy) in enemy_reachable:
+                spatial[wy, wx, 9] = 1.0
+            if (cx, cy) in friendly_reachable:
+                spatial[wy, wx, 10] = 1.0
 
     return spatial
 
@@ -304,6 +385,19 @@ def extract_scalars_from_replay_state(state: dict, ship_id: str, pid: int) -> np
                     if int(p_str) != pid)
     my_bank   = state['player_energy'].get(pid, 5000)
 
+    # Proximity danger: count ships within 2 toroidal steps
+    enemy_near    = 0
+    friendly_near = 0
+    for p_str, p_ents in state['entities'].items():
+        p2 = int(p_str)
+        for eid_str, edata in p_ents.items():
+            d = torus_dist(sx, sy, edata['x'], edata['y'], W, H)
+            if d <= 2:
+                if p2 != pid:
+                    enemy_near += 1
+                elif eid_str != str(ship_id):
+                    friendly_near += 1
+
     return np.array([
         turns_left / max_turns,
         my_bank    / MAX_HALITE,
@@ -316,4 +410,6 @@ def extract_scalars_from_replay_state(state: dict, ship_id: str, pid: int) -> np
         ddy / H,
         return_urgency,
         turns_slack,
+        enemy_near    / 10.0,
+        friendly_near / 10.0,
     ], dtype=np.float32)

@@ -121,9 +121,11 @@ python rl_train.py --resume checkpoints\model_ep100.pt --start-episode 101 --epi
 | `--checkpoint-interval` | 50 | Save a checkpoint every N episodes |
 | `--resume` | *(none)* | Path to `.pt` file to resume from |
 | `--start-episode` | 1 | Episode counter start (use with `--resume`) |
-| `--opponent-policy` | `idle` | `idle` (no opponent moves) or `greedy` (scripted heuristic bot) |
-| `--collision-penalty` | 10.0 | Penalty per ship lost in collision (lower = less risk-averse) |
-| `--cargo-reward-scale` | 0.3 | Weight on per-turn cargo-gain reward (dense learning signal) |
+| `--opponent-policy` | `idle` | `idle` (no moves), `greedy` (scripted heuristic), `random` |
+| `--collision-scale` | 20.0 | Fixed penalty added per destroyed p0 ship (on top of cargo lost) |
+| `--ent-coef` | 0.25 | Entropy bonus weight — higher = more exploration, prevents policy collapse |
+| `--ent-floor` | 0.5 | Entropy floor (nats) — below this threshold an extra penalty kicks in |
+| `--ent-floor-coef` | 0.5 | Extra entropy penalty multiplier when below `--ent-floor` |
 | `--width` / `--height` | 32 | Map dimensions |
 | `--lr` | 3e-4 | Learning rate |
 | `--device` | `cpu` | `cpu` or `cuda` |
@@ -136,9 +138,11 @@ python rl_train.py --resume checkpoints\model_ep100.pt --start-episode 101 --epi
 ### Console output (live)
 The training script prints every 10 episodes:
 ```
-Episode    10 | reward      0.0 | avg100      0.0 | 12s
-Episode    20 | reward    150.0 | avg100    80.0 | 24s
+Episode    10 | reward      0.0 | avg100      0.0 | deposited      0 | entropy 1.946 | s= 0% n= 0% e= 0% s= 0% w= 0% r= 0% h= 0% | 12s
+Episode    20 | reward   1500.0 | avg100    800.0 | deposited   1450 | entropy 1.603 | s=18% n=16% e=15% s=17% w=14% r= 8% h=12% | 24s
 ```
+
+Columns in order: episode · episode reward · 100-ep rolling average · halite banked · mean entropy · action distribution (stay/north/east/south/west/random/home %) · elapsed seconds.
 
 ### CSV log (any time, including after training)
 Open `checkpoints\training_log.csv` in Excel, or tail it in a second terminal:
@@ -147,11 +151,79 @@ Open `checkpoints\training_log.csv` in Excel, or tail it in a second terminal:
 while ($true) { Get-Content checkpoints\training_log.csv | Select-Object -Last 5; Start-Sleep 10 }
 ```
 
-Columns: `episode`, `reward`, `avg100_reward`, `elapsed_sec`
+Columns: `episode`, `reward`, `avg100_reward`, `deposited`, `mean_entropy`, `elapsed_sec`, `stay`, `north`, `east`, `south`, `west`, `random`, `home`
+
+- **`deposited`** — raw halite actually banked this episode (ignores reward formula). This is the clearest measure of real performance.
+- **`reward`** — v8 shaped reward: `Σ(cargo_after − cargo_before)` for surviving ships + halite deposited − `(collision_scale + cargo_lost)` per destroyed p0 ship.
+- **`stay`…`home`** — fraction of all actions taken that were each action type this episode (0.0–1.0). Useful for diagnosing policy collapse (e.g. one action near 1.0).
+
+### How to read the entropy column
+
+With 7 actions, max entropy = ln(7) ≈ 1.946 nats.
+
+| Entropy value | What it means | Action |
+|---|---|---|
+| ~1.95 nats | Perfectly uniform — all 7 actions equally likely | Normal at start |
+| 1.0–1.6 nats | Healthy exploration — policy has preferences but still tries things | Good |
+| 0.5–1.0 nats | Moderate convergence — learning is working | Good |
+| < 0.5 nats | Warning: policy converging hard on a few actions | Watch closely |
+| 0.000 nats | **Total collapse** — always picks same action (seen in replay as "always east") | Retrain with higher `--ent-coef` |
 
 ---
 
-## 5. Extract imitation learning data from replays
+## 5. Evaluate a trained checkpoint
+
+Measure how good a checkpoint is: runs N complete games vs a scripted opponent and
+reports win rate, mean halite, and halite-per-turn.
+
+```bash
+# 20 games vs the greedy bot (default)
+python rl_eval.py --model checkpoints\model_final_weights.pt --games 20
+
+# Compare two checkpoints (run separately and compare win rates)
+python rl_eval.py --model checkpoints\model_ep500_weights.pt  --games 20
+python rl_eval.py --model checkpoints\model_ep1000_weights.pt --games 20
+
+# Use deterministic (greedy) actions for a fair upper-bound estimate
+python rl_eval.py --model checkpoints\model_final_weights.pt --games 20 --deterministic
+
+# Against idle opponent (useful early in training when bot hasn't beaten greedy yet)
+python rl_eval.py --model checkpoints\model_ep100_weights.pt --games 20 --opponent idle
+
+# Reproducible evaluation (fixed seed)
+python rl_eval.py --model checkpoints\model_final_weights.pt --games 20 --seed 42
+```
+
+### rl_eval.py options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | *(required)* | Path to `*_weights.pt` or full `.pt` checkpoint |
+| `--games` | 20 | Number of games to run |
+| `--opponent` | `greedy` | `greedy`, `idle`, or `random` |
+| `--deterministic` | off | Greedy actions (no sampling) — best for benchmarking |
+| `--width` / `--height` | 32 | Map dimensions |
+| `--device` | `cpu` | `cpu` or `cuda` |
+| `--seed` | *(random)* | Base seed (game i uses seed+i) |
+
+### Sample output
+
+```
+Game   RL halite  Opp halite  Result  Turns  Hal/Turn
+----------------------------------------------------------
+    1       4230        2180      RL    400      10.6
+    2       3910        3100      RL    400       9.8
+    ...
+Results over 20 games:
+  Win rate     : 75.0%  (15W / 1T / 4L)
+  Mean halite  : RL=3840  vs  Opp=2650
+  Halite/turn  : 9.6
+  RL advantage : +1190 halite on average
+```
+
+---
+
+## 6. Extract imitation learning data from replays
 
 Pre-train the bot by learning from existing replay files before running PPO.
 
@@ -167,7 +239,7 @@ Each `.npz` file contains: `obs_spatial`, `obs_scalars`, `actions`, `turns`, `sh
 
 ---
 
-## 6. Play with the trained RL bot
+## 7. Play with the trained RL bot
 
 ### Run the RL bot against the starter-kit bot
 
@@ -196,7 +268,7 @@ python run_game.py \
 
 ---
 
-## 7. Typical workflow
+## 8. Typical workflow
 
 ```
 1. Run a few games to generate replays:
@@ -208,15 +280,18 @@ python run_game.py \
 3. Phase 1 — train against idle opponent until reward is positive:
    python rl_train.py --episodes 1000 --checkpoint-dir checkpoints --opponent-policy idle
 
-4. Phase 2 — resume against greedy opponent:
+4. Evaluate Phase 1 progress:
+   python rl_eval.py --model checkpoints\model_ep1000_weights.pt --games 20 --opponent idle
+
+5. Phase 2 — resume against greedy opponent:
    python rl_train.py --resume checkpoints\model_ep1000.pt --start-episode 1001 --episodes 1000 --checkpoint-dir checkpoints --opponent-policy greedy
 
-5. Monitor training_log.csv to watch reward improve.
+6. Evaluate Phase 2 progress:
+   python rl_eval.py --model checkpoints\model_ep2000_weights.pt --games 20 --opponent greedy
 
-6. Test a checkpoint against the scripted bot:
-   python run_game.py --bot "python rl_bot.py --model checkpoints\model_ep500_weights.pt" --bot "..\starter_kits\Python3\MyBot.py" --verbose
+7. Monitor training_log.csv to watch reward improve.
 
-7. Resume if you want to keep training:
+8. Resume if you want to keep training:
    python rl_train.py --resume checkpoints\model_ep2000.pt --start-episode 2001 --episodes 1000 --checkpoint-dir checkpoints
 ```
 
@@ -224,7 +299,7 @@ python run_game.py \
 
 | Reward range | Meaning |
 |---|---|
-| Consistently negative (e.g. −200) | Bot is losing ships every game; not learning to mine |
-| Near 0 | Bot is avoiding collisions but not mining much yet |
+| Consistently negative (e.g. −200) | Bot is losing loaded ships; collision_scale penalty dominates |
+| Near 0 | Bot is avoiding deaths but net cargo gain is close to zero |
 | Positive and rising | Bot is collecting and depositing halite — learning is working |
-| Positive then plateauing | Normal; switch to greedy opponent for harder challenge |
+| Positive then plateauing | Normal; switch to greedy opponent for a harder challenge |
