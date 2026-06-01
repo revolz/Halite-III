@@ -522,6 +522,5 @@ xcuserdata/
 #################
 ## RL Training  ##
 #################
-# Trained model checkpoints (large binary files; not for git)
-my_extension/rl_v1/checkpoints/
-my_extension/rl_v2/checkpoints/
+# Old archived checkpoint folder (removed from tracking; too large for git)
+my_extension/rl_v1/checkpoints_v9/
