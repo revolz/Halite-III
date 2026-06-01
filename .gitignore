@@ -518,3 +518,10 @@ xcuserdata/
 *.moved-aside
 *.xccheckout
 *.xcscmblueprint
+
+#################
+## RL Training  ##
+#################
+# Trained model checkpoints (large binary files; not for git)
+my_extension/rl_v1/checkpoints/
+my_extension/rl_v2/checkpoints/
