@@ -290,10 +290,18 @@ class HaliteEnv:
                 for ddx, ddy, _ in _cardinal:
                     enemy_threat_zone.add(((ex + ddx) % W, (ey + ddy) % H))
 
-        # Phase 2 — Compute initial destinations from resolved primitive actions.
+        # Phase 2 — Compute initial destinations (with move-affordability check).
+        # The engine silently ignores any move a ship cannot afford
+        # (cargo < cell_halite // 10).  Mirror this here so that planned
+        # destinations reflect what the engine will actually execute.
         dest_map: Dict[int, tuple] = {}
         for sid, prim in resolved_prims.items():
             sx, sy = eng.player_entities[0][sid]
+            if prim != ACTION_STAY:
+                cell_h = eng.halite.get((sx, sy), 0)
+                if eng.entities[sid]['cargo'] < cell_h // 10:
+                    prim = ACTION_STAY
+                    resolved_prims[sid] = ACTION_STAY
             ddx, ddy = _dir_delta[prim]
             dest_map[sid] = ((sx + ddx) % W, (sy + ddy) % H)
 
