@@ -364,14 +364,22 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
                     for ddx, ddy, _ in _cardinal:
                         enemy_threat_zone.add(Position((ex+ddx)%W, (ey+ddy)%H))
 
-        # Phase 2 — Compute initial destinations.
+        # Phase 2 — Compute initial destinations (with move-affordability check).
+        # The engine silently ignores any move a ship cannot afford
+        # (cargo < cell_halite // 10).  Mirror this here so that planned
+        # destinations reflect what the engine will actually execute.
+        overridden_act: dict = {}
         dest_of: dict = {}
         for ship, act in ship_resolved:
+            if act != ACTION_STAY:
+                cell_h = gmap[ship.position].halite_amount
+                if ship.halite_amount < cell_h // 10:
+                    act = ACTION_STAY
+            overridden_act[ship.id] = act
             ddx, ddy = _dir_delta[act]
             dest_of[ship.id] = Position((ship.position.x+ddx)%W, (ship.position.y+ddy)%H)
 
         # Phase 3a — Enemy avoidance (MOVE): ships heading into threat zone → STAY.
-        overridden_act = {ship.id: act for ship, act in ship_resolved}
         for ship, _ in ship_resolved:
             if dest_of[ship.id] in enemy_threat_zone:
                 overridden_act[ship.id] = ACTION_STAY
