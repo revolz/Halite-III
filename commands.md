@@ -4,17 +4,17 @@ All commands are run from the relevant bot folder unless stated otherwise.
 
 **Shared infrastructure** (run from `my_extension/`):
 ```bash
-cd "C:\Temp\Halite-III - 02 - Second Version\my_extension"
+cd "C:\Temp\Halite-III\my_extension"
 ```
 
 **rl_v1 bot** (archived – reference only):
 ```bash
-cd "C:\Temp\Halite-III - 02 - Second Version\my_extension\rl_v1"
+cd "C:\Temp\Halite-III\my_extension\rl_v1"
 ```
 
 **rl_v2 bot** (active – use this for new training):
 ```bash
-cd "C:\Temp\Halite-III - 02 - Second Version\my_extension\rl_v2"
+cd "C:\Temp\Halite-III\my_extension\rl_v2"
 ```
 
 ---
