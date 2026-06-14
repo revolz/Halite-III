@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Halite III Replay Viewer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0e1b34; color: #e8eefc; font-family: "Segoe UI", Arial, sans-serif;
+           height: 100vh; overflow: hidden; }
+
+    /* drop zone */
+    #drop { width: 100vw; height: 100vh; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 1em;
+            border: 4px dashed #2c3f63; cursor: pointer; user-select: none;
+            transition: border-color .15s, background .15s; }
+    #drop.over { border-color: #4af; background: rgba(68,170,255,.06); }
+    #drop h1 { font-size: 1.8em; font-weight: 600; }
+    #drop p { color: #8aa0c8; }
+    #file { display: none; }
+    #err { position: fixed; bottom: 8px; left: 8px; right: 8px; color: #ff9a9a;
+           font-size: 13px; white-space: pre-wrap; z-index: 50; }
+
+    /* app layout */
+    #app { display: none; height: 100vh; }
+    .layout { display: flex; height: 100%; gap: 14px; padding: 12px; }
+    .left  { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; }
+    .right { flex: 1 1 auto; overflow-y: auto; padding-right: 6px; }
+
+    .heading { text-align: center; margin-bottom: 8px; font-size: 1.05em;
+               letter-spacing: .5px; text-transform: uppercase; }
+    .heading .action { color: #9fb2d6; margin: 0 .4em; font-weight: 400; }
+    .heading .player { font-weight: 700; }
+
+    .mapwrap { background: #0a1730; border-radius: 4px; line-height: 0; }
+    .mapwrap canvas { display: block; }
+
+    .controls { display: flex; align-items: center; gap: 6px; margin-top: 10px;
+                width: 100%; color: #cfe0ff; font-size: 14px; }
+    .controls button { background: none; border: 0; color: #cfe0ff; cursor: pointer;
+                       font-size: 16px; padding: 4px 6px; border-radius: 4px; }
+    .controls button:hover { background: rgba(255,255,255,.08); }
+    .controls .speed { min-width: 34px; font-weight: 600; }
+    .controls input[type=range] { flex: 1; accent-color: #f0b429; }
+    .controls .frameno { min-width: 30px; text-align: center; color: #9fb2d6; }
+
+    /* right-side panels */
+    .panel-label { color: #9fb2d6; font-size: 12px; letter-spacing: 1px;
+                   margin: 14px 2px 6px; }
+    .panel { background: #f5f8ff; color: #2a3550; border-radius: 6px; padding: 12px 14px; }
+    .mapstats { display: flex; gap: 26px; flex-wrap: wrap; }
+    .mapstats .k { color: #7d8aa6; font-size: 12px; }
+    .mapstats .v { font-size: 15px; }
+    .mapstats .sub { color: #9aa6bf; font-size: 11px; }
+
+    .pcard { background: #f5f8ff; color: #2a3550; border-radius: 6px; padding: 12px 14px;
+             margin-bottom: 12px; }
+    .pcard .ptitle { display: flex; align-items: baseline; gap: 8px; }
+    .pcard .pname { font-weight: 700; font-size: 13px; }
+    .pcard .pscore { font-size: 20px; font-weight: 700; }
+    .pcard .ppct { color: #e8703a; font-size: 13px; }
+    .pcard .row { display: flex; }
+    .pcard .chart { flex: 1; }
+    .pcard .counts { width: 120px; padding-left: 10px; }
+    .pcard .counts .cline { display: flex; justify-content: space-between;
+                            font-size: 13px; padding: 6px 0; color: #4a5570; }
+    .pcard .counts .cval { font-weight: 700; color: #2a3550; }
+    svg.chart-svg { width: 100%; height: 130px; display: block; }
+    .axislbl { fill: #9aa6bf; font-size: 9px; }
+    .gridline { stroke: #e3e9f5; stroke-width: 1; }
+
+    .mapobj { color: #2a3550; font-size: 13px; }
+    .mapobj .hint { color: #8a96b0; text-align: center; font-size: 13px; padding: 8px 0; }
+    select { width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid #d2dbef;
+             background: #fff; color: #2a3550; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="drop">
+    <h1>Halite III Replay Viewer</h1>
+    <p>Drop a <strong>.hlt</strong> replay file here, or click to browse</p>
+    <p style="font-size:.85em;color:#5f74a0">Map + per-player halite charts + playback (baseline libhaliteviz)</p>
+    <input type="file" id="file" accept=".hlt">
+  </div>
+
+  <div id="app">
+    <div class="layout">
+      <div class="left">
+        <div class="heading" id="heading"></div>
+        <div class="mapwrap" id="map"></div>
+        <div class="controls" id="controls">
+          <button id="speed" class="speed" title="Speed">3x</button>
+          <button id="prev" title="Previous frame">&#9198;</button>
+          <button id="play" title="Play/Pause">&#9654;</button>
+          <button id="next" title="Next frame">&#9197;</button>
+          <button id="reset" title="Reset view">&#8635;</button>
+          <span class="frameno" id="frame0">0</span>
+          <input type="range" id="slider" min="0" max="1" value="0" step="1">
+          <span class="frameno" id="frameN">0</span>
+        </div>
+      </div>
+      <div class="right">
+        <div class="panel-label">GAME/MAP STATS</div>
+        <div class="panel mapstats" id="mapstats"></div>
+        <div class="panel-label">PLAYER STATS</div>
+        <div id="players"></div>
+        <div class="panel-label">MAP OBJECT PROPERTIES</div>
+        <div class="panel mapobj" id="mapobj"><div class="hint">Click a ship or cell on the map to see properties</div></div>
+        <div class="panel-label">THEME</div>
+        <select id="theme"></select>
+      </div>
+    </div>
+  </div>
+
+  <div id="err"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const errEl = $('err');
+    function fail(msg){ errEl.textContent = 'Error: ' + msg; console.error(msg); }
+
+    // ---- load the prebuilt baseline bundle (cache-busted) ----
+    const BUNDLE = '../libhaliteviz/dist/bundle.js?v=' + Date.now();
+    const BUNDLE_URL = new URL(BUNDLE, location.href).href;
+    let lastScriptError = null;
+    window.addEventListener('error', (ev) => {
+      if (ev && (ev.message || ev.filename))
+        lastScriptError = (ev.message || String(ev.error||'error'))
+          + (ev.filename ? ('\n  at ' + ev.filename + ':' + ev.lineno) : '');
+    });
+    let bundleP = null;
+    function loadBundle(){
+      if (window.libhaliteviz) return Promise.resolve();
+      if (bundleP) return bundleP;
+      bundleP = new Promise((res, rej) => {
+        const s = document.createElement('script'); s.src = BUNDLE;
+        s.onload = () => window.libhaliteviz ? res()
+          : rej(new Error('bundle loaded but window.libhaliteviz is undefined:\n  '+(lastScriptError||'(open DevTools)')));
+        s.onerror = () => rej(new Error('could not load ' + BUNDLE_URL
+          + '\nServe from the REPO ROOT: cd C:\\Temp\\Halite-III-Claude && python -m http.server 8000'));
+        document.head.appendChild(s);
+      });
+      return bundleP;
+    }
+    loadBundle().then(()=>{ $('drop').querySelector('h1').textContent='Halite III Replay Viewer ✓'; }, e=>fail(e.message));
+
+    // ---- state ----
+    let replay = null, vis = null, stats = null, players = [], colors = [];
+    let lastFrame = -1;
+    const hex = (c) => '#' + c.toString(16).padStart(6,'0');
+
+    function colorFor(i){ return hex(colors[i % colors.length]); }
+
+    async function load(file){
+      errEl.textContent = '';
+      try { await loadBundle(); } catch(e){ fail(e.message); return; }
+      try {
+        const buf = await file.arrayBuffer();
+        replay = await libhaliteviz.parseReplay(buf);
+        document.title = 'Halite III — ' + file.name;
+        $('drop').style.display = 'none';   // show app first so charts measure width
+        $('app').style.display = 'block';
+        await buildTheme();
+        await rebuild();
+      } catch(e){ fail((e&&e.message)?e.message:('could not load '+file.name)); }
+    }
+
+    async function buildTheme(){
+      const sel = $('theme'); sel.innerHTML = '';
+      const names = Object.keys(libhaliteviz.theme.THEMES);
+      for (const n of names){
+        const o = document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o);
+      }
+      sel.value = libhaliteviz.theme.selectedTheme || 'Turtles';
+      sel.onchange = async () => { libhaliteviz.theme.setTheme(sel.value); await rebuild(); };
+    }
+
+    // (re)create the visualizer + sidebar (used on load and theme change)
+    async function rebuild(){
+      await libhaliteviz.setAssetRoot('');
+      if (vis && vis.destroy){ try{ vis.destroy(); }catch(e){} }
+      $('map').innerHTML = '';
+
+      players = replay.players;
+      colors = (libhaliteviz.theme.THEMES[libhaliteviz.theme.selectedTheme] || {}).playerColors
+               || libhaliteviz.PLAYER_COLORS;
+
+      const size = Math.min(window.innerHeight - 90, window.innerWidth * 0.52, 620);
+      vis = new libhaliteviz.HaliteVisualizer(replay, size, size);
+      vis.attach($('map'));
+      stats = vis.stats;
+
+      // header "A defeats B" (rank from game_statistics)
+      buildHeading();
+      // static map stats labels
+      $('slider').max = replay.full_frames.length - 1;
+      $('frameN').textContent = replay.full_frames.length - 1;
+      buildPlayerCards();
+
+      // wire controls
+      wireControls();
+      lastFrame = -1;
+      vis.onUpdate.add(onTick);
+      vis.onSelect.add(onSelect);
+      vis.onPlay.add(()=> $('play').innerHTML='&#10074;&#10074;');
+      vis.onPause.add(()=> $('play').innerHTML='&#9654;');
+      renderFrame(0);
+    }
+
+    function buildHeading(){
+      const ps = replay.players.map((p,i)=>({i, name:p.name,
+        rank: (replay.game_statistics && replay.game_statistics.player_statistics[i] || {}).rank || (i+1)}));
+      ps.sort((a,b)=>a.rank-b.rank);
+      const h = $('heading'); h.innerHTML='';
+      ps.forEach((p,idx)=>{
+        const span=document.createElement('span'); span.className='player';
+        span.style.color=colorFor(p.i); span.textContent=p.name;
+        h.appendChild(span);
+        if (idx===0){ const a=document.createElement('span'); a.className='action'; a.textContent='defeats'; h.appendChild(a); }
+        else if (idx<ps.length-1){ const c=document.createElement('span'); c.className='action'; c.textContent=','; h.appendChild(c); }
+      });
+    }
+
+    function buildPlayerCards(){
+      const wrap = $('players'); wrap.innerHTML='';
+      replay.players.forEach((p,i)=>{
+        const card=document.createElement('div'); card.className='pcard';
+        card.innerHTML =
+          `<div class="ptitle"><span class="pname" style="color:${colorFor(i)}">${p.name}</span>`
+          + `<span class="pscore" id="score-${i}">0</span><span class="ppct" id="pct-${i}"></span></div>`
+          + `<div class="row"><div class="chart"><svg class="chart-svg" id="chart-${i}"></svg></div>`
+          + `<div class="counts">`
+          + `<div class="cline"><span>Ships</span><span class="cval" id="ships-${i}">0</span></div>`
+          + `<div class="cline"><span>Dropoffs</span><span class="cval" id="drops-${i}">0</span></div>`
+          + `<div class="cline"><span>Collisions</span><span class="cval" id="coll-${i}">0</span></div>`
+          + `</div></div>`;
+        wrap.appendChild(card);
+      });
+    }
+
+    function wireControls(){
+      const speeds=[0.5,1,2,3,4,5,6,8,10]; let si=3;
+      const sp=$('speed'); const setSpeed=()=>{ sp.textContent=speeds[si]+'x'; vis.playSpeed=speeds[si]*4; };
+      setSpeed(); sp.onclick=()=>{ si=(si+1)%speeds.length; setSpeed(); };
+      $('play').onclick=()=>{ vis.isPlaying()?vis.pause():vis.play(); };
+      $('prev').onclick=()=>{ vis.pause(); vis.scrub(Math.max(0,vis.frame-1),0); onTick(); };
+      $('next').onclick=()=>{ vis.pause(); vis.scrub(Math.min(replay.full_frames.length-1,vis.frame+1),0); onTick(); };
+      $('reset').onclick=()=>{ if(vis.camera&&vis.camera.reset) vis.camera.reset(); };
+      $('slider').oninput=(e)=>{ vis.pause(); vis.scrub(parseInt(e.target.value,10),0); onTick(); };
+    }
+
+    function onTick(){
+      const f = vis.frame|0;
+      $('slider').value = f; $('frame0').textContent = f;
+      if (f !== lastFrame){ lastFrame = f; renderFrame(f); }
+    }
+
+    // y-axis max across all players/frames, rounded up to a clean k, min 5000
+    let chartMax = 5000, energySeries = null;
+    function computeSeries(){
+      energySeries = replay.players.map((p,i)=> stats.frames.map(fr => (fr.players[i]||fr.players[String(i)]||{}).currentEnergy||0));
+      let m = 0; energySeries.forEach(s=>s.forEach(v=>{ if(v>m)m=v; }));
+      chartMax = Math.max(5000, Math.ceil(m/1000)*1000);
+    }
+
+    function renderFrame(f){
+      if (!energySeries) computeSeries();
+      const fr = stats.frames[f] || stats.frames[stats.frames.length-1];
+      // game/map stats
+      const collected = stats.totalHalite ? (1 - fr.remainingHalite/stats.totalHalite)*100 : 0;
+      $('mapstats').innerHTML =
+        `<div><div class="k">Map</div><div class="v">Size: ${replay.production_map.width}x${replay.production_map.height}</div>`
+        + `<div class="sub">Seed: ${replay.map_generator_seed!=null?replay.map_generator_seed:'—'}</div></div>`
+        + `<div><div class="k">Halite Available</div><div class="v">${Math.round(fr.remainingHalite).toLocaleString()}</div></div>`
+        + `<div><div class="k">Halite Collected</div><div class="v">${collected.toFixed(2)}%</div></div>`;
+      // players
+      const totEnergy = replay.players.reduce((t,p,i)=> t + ((fr.players[i]||fr.players[String(i)]||{}).currentEnergy||0), 0) || 1;
+      replay.players.forEach((p,i)=>{
+        const ps = fr.players[i] || fr.players[String(i)] || {};
+        $('score-'+i).textContent = Math.round(ps.currentEnergy||0).toLocaleString();
+        $('pct-'+i).textContent = (((ps.currentEnergy||0)/totEnergy)*100).toFixed(2)+'%';
+        $('ships-'+i).textContent = ps.currentShips||0;
+        $('drops-'+i).textContent = ps.currentDropoffs||0;
+        $('coll-'+i).textContent = ps.currentCollisions||0;
+        drawChart($('chart-'+i), energySeries[i], chartMax, f, colorFor(i));
+      });
+    }
+
+    function drawChart(svg, series, maxY, cur, color){
+      const W = Math.max(220, svg.clientWidth || (svg.parentElement && svg.parentElement.clientWidth) || 360);
+      const H = 130, mL=34, mR=10, mT=10, mB=14, n = series.length;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      const px = (i)=> mL + (n<=1?0:(i/(n-1))*(W-mL-mR));
+      const py = (v)=> mT + (1 - v/maxY)*(H-mT-mB);
+      let s = '';
+      for (let k=0;k<=5;k++){ const v=maxY*k/5, y=py(v);
+        s += `<line class="gridline" x1="${mL}" y1="${y}" x2="${W-mR}" y2="${y}"/>`;
+        s += `<text class="axislbl" x="2" y="${y+3}">${Math.round(v/1000)}k</text>`; }
+      let dline=''; for (let i=0;i<n;i++){ dline += (i?'L':'M')+px(i).toFixed(1)+' '+py(series[i]).toFixed(1)+' '; }
+      s += `<path d="${dline}" fill="none" stroke="${color}" stroke-width="1.4" stroke-dasharray="1 6" opacity="0.85"/>`;
+      const c = Math.max(0, Math.min(cur, n-1));
+      let area='M'+px(0).toFixed(1)+' '+py(0).toFixed(1)+' ';
+      for (let i=0;i<=c;i++){ area += 'L'+px(i).toFixed(1)+' '+py(series[i]).toFixed(1)+' '; }
+      area += 'L'+px(c).toFixed(1)+' '+py(0).toFixed(1)+' Z';
+      s += `<path d="${area}" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="1.6"/>`;
+      s += `<line x1="${px(c)}" y1="${mT}" x2="${px(c)}" y2="${H-mB}" stroke="${color}" stroke-width="1" opacity="0.5"/>`;
+      svg.innerHTML = s;
+    }
+
+    function onSelect(kind, args){
+      const box = $('mapobj');
+      const f = vis.frame|0;
+      const lines = [];
+      if (kind === 'ship'){
+        const ship = vis.findShip(f, args.owner, args.id);
+        if (ship){ lines.push(`<b>Ship</b> #${args.id} — ${replay.players[args.owner].name}`);
+          lines.push(`Energy (cargo): ${ship.energy}`); lines.push(`Position: ${ship.x}, ${ship.y}`); }
+      }
+      if (kind === 'point' || kind === 'ship'){
+        const e = vis.findCurrentProduction(f, args.x, args.y);
+        lines.push(`Cell ${args.x}, ${args.y}: ${e} halite`);
+      }
+      box.innerHTML = lines.length ? lines.map(l=>`<div style="padding:3px 0">${l}</div>`).join('')
+                                   : '<div class="hint">Click a ship or cell on the map to see properties</div>';
+    }
+
+    // drop / file handlers
+    $('drop').addEventListener('click', ()=>$('file').click());
+    $('file').addEventListener('change', e=>{ if(e.target.files[0]) load(e.target.files[0]); });
+    ['dragenter','dragover'].forEach(ev=>window.addEventListener(ev,e=>{e.preventDefault();$('drop').classList.add('over');}));
+    ['dragleave','drop'].forEach(ev=>window.addEventListener(ev,e=>{e.preventDefault();$('drop').classList.remove('over');}));
+    window.addEventListener('drop', e=>{ const f=e.dataTransfer&&e.dataTransfer.files[0]; if(f) load(f); });
+  </script>
+</body>
+</html>
