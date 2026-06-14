@@ -375,7 +375,6 @@ my_extension/
     ├── README.md         # rl_v4 overview + commands
     ├── rl_features.py    # 9 actions (adds DROPOFF), 14 channels, 29 scalars
     ├── rl_bot.py rl_env.py rl_model.py rl_train.py rl_eval.py rl_collect.py
-    ├── gen_replay_v4.py  # rl_v4-vs-rl_v3 replay generator
     └── checkpoints/      # Training output (weights tracked for replication)
 ```
 See `my_extension/CHANGELOG.md` for the change history.
