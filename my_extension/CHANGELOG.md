@@ -1,5 +1,17 @@
 # Change Log
 
+## 2026-06-15 — web replay viewer
+- Added `my_extension/halite_web_viewer.html`: a self-contained, halite.io-style
+  replay viewer. Drag-drop a `.hlt` to get the map + playback plus a stats sidebar
+  (GAME/MAP stats, per-player halite-over-turns charts, Ships/Dropoffs/Collisions,
+  theme dropdown). Built on the prebuilt `libhaliteviz` bundle; baseline untouched.
+- Run from the repo root: `python -m http.server 8000`, then open
+  `http://localhost:8000/my_extension/halite_web_viewer.html`.
+- Requires `libhaliteviz/dist/bundle.js` (gitignored, local). If it's missing/broken
+  ("Cannot find module 'url'/'path'"), rebuild it (webpack 5 needs the polyfills):
+  `cd libhaliteviz && npm i --no-save --legacy-peer-deps url path-browserify` then
+  rebuild webpack with `resolve.fallback = { url, path }`.
+
 ## 2026-06-14 — cleanup
 - Removed `rl_v4/gen_replay_v4.py` (redundant with `run_game.py --replay`, which
   uses the same engine path); replay docs now point at `run_game.py --replay`.
