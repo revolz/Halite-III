@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-06-14 — cleanup
+- Removed `rl_v4/gen_replay_v4.py` (redundant with `run_game.py --replay`, which
+  uses the same engine path); replay docs now point at `run_game.py --replay`.
+
 ## 2026-06-14 — rl_v4 bot + visualization fixes
 
 ### rl_v4 (new active bot)
