@@ -1003,8 +1003,21 @@ class HaliteEngine:
         # Initialization handshake
         player_names = []
         for pid, bot in enumerate(bots):
-            bot.stdin.write(self._init_message(pid))
-            bot.stdin.flush()
+            rc = bot.poll()
+            if rc is not None:
+                _, err = bot.communicate()
+                raise RuntimeError(
+                    f"Bot {pid} exited before handshake (exit code {rc}):\n{err[:1000]}"
+                )
+            try:
+                bot.stdin.write(self._init_message(pid))
+                bot.stdin.flush()
+            except OSError:
+                bot.kill()
+                _, err = bot.communicate()
+                raise RuntimeError(
+                    f"Bot {pid} pipe write failed (bot may have crashed):\n{err[:1000]}"
+                )
             name = bot.stdout.readline().strip()
             player_names.append(name)
             if self.verbose:
@@ -1024,9 +1037,21 @@ class HaliteEngine:
 
             # Build and send turn state (uses changed_cells from previous turn)
             turn_msg = self._turn_message()
-            for bot in bots:
-                bot.stdin.write(turn_msg)
-                bot.stdin.flush()
+            for pid, bot in enumerate(bots):
+                if bot.poll() is not None:
+                    _, err = bot.communicate()
+                    raise RuntimeError(
+                        f"Bot {pid} crashed on turn {self.turn} (exit {bot.returncode}):\n{err[:1000]}"
+                    )
+                try:
+                    bot.stdin.write(turn_msg)
+                    bot.stdin.flush()
+                except OSError:
+                    bot.kill()
+                    _, err = bot.communicate()
+                    raise RuntimeError(
+                        f"Bot {pid} pipe write failed on turn {self.turn}:\n{err[:1000]}"
+                    )
 
             # Collect commands
             all_commands: Dict[int, str] = {}

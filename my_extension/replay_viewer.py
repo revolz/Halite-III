@@ -49,8 +49,10 @@ BG_HEX = 0x141EA0
 BG_RGB = ((BG_HEX >> 16) & 0xFF, (BG_HEX >> 8) & 0xFF, BG_HEX & 0xFF)  # (20, 30, 160)
 BG_COLOR = f'#{BG_HEX:06x}'
 
-# Player colours for the "Turtles" theme
-_PLAYER_COLORS_HEX = [0x1BB15A, 0xF54356, 0xFABB2C, 0xffa2e2]
+# Player colours for the "Turtles" theme.
+# Player 1 uses the purple scheme (swapped with red, which moves to slot 3) so
+# the second bot renders purple instead of red.
+_PLAYER_COLORS_HEX = [0x1BB15A, 0xffa2e2, 0xFABB2C, 0xF54356]
 PLAYER_COLORS_HEX = _PLAYER_COLORS_HEX
 PLAYER_COLORS = [f'#{c:06x}' for c in _PLAYER_COLORS_HEX]
 
@@ -73,14 +75,14 @@ _DIR_LABELS: Dict[str, str] = {
 # Attack/shockwave ring colour: light grey for same-owner, white for multi-owner
 _EXPLOSION_RGB_DEFAULT = (0xFF, 0xFF, 0xFF)
 
-# Per-player sprite prefixes (Turtles theme, default)
-_PLAYER_SPRITE_NAMES = ['green', 'red', 'yellow', 'purple']
-# Corresponding base sprite filenames in assets/
+# Per-player sprite prefixes (Turtles theme).  Player 1 ↔ purple (red moved to 3).
+_PLAYER_SPRITE_NAMES = ['green', 'purple', 'yellow', 'red']
+# Corresponding base sprite filenames in assets/ (same red↔purple swap)
 _BASE_SPRITE_FILES = [
     os.path.join(_ASSETS_DIR, 'base-green.png'),
-    os.path.join(_ASSETS_DIR, 'base-red.png'),
-    os.path.join(_ASSETS_DIR, 'base-yellow.png'),
     os.path.join(_ASSETS_DIR, 'base-purple.png'),
+    os.path.join(_ASSETS_DIR, 'base-yellow.png'),
+    os.path.join(_ASSETS_DIR, 'base-red.png'),
 ]
 # Turtle ship sprites: 3 load levels per player
 _TURTLE_SPRITE_FILES = [

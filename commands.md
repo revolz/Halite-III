@@ -7,15 +7,20 @@ All commands are run from the relevant bot folder unless stated otherwise.
 cd "C:\Temp\Halite-III\my_extension"
 ```
 
-**rl_v1 bot** (archived – reference only):
+**rl_v1 / rl_v2 / rl_v3 bots** (archived – benchmark reference only, do not modify):
 ```bash
-cd "C:\Temp\Halite-III\my_extension\rl_v1"
+cd "C:\Temp\Halite-III\my_extension\rl_v3"
 ```
 
-**rl_v2 bot** (active – use this for new training):
+**rl_v4 bot** (active – use this for new training). See `rl_v4/README.md` for
+details (9 actions incl. learned dropoff, production-aligned reward, train vs rl_v3):
 ```bash
-cd "C:\Temp\Halite-III\my_extension\rl_v2"
+cd "C:\Temp\Halite-III\my_extension\rl_v4"
+python rl_train.py --opponent rl_v3      # train directly against the rl_v3 bot
 ```
+
+> The command examples below use `rl_v2` paths; for the active bot substitute
+> `rl_v4/` (same CLI). Recent changes are summarized in `my_extension/CHANGELOG.md`.
 
 ---
 
@@ -364,14 +369,14 @@ my_extension/
 │   ├── rl_eval.py
 │   ├── rl_collect.py
 │   └── checkpoints_v9/
-└── rl_v2/                # Active – exploration bot with PROSPECT action
-    ├── rl_bot.py
-    ├── rl_env.py
-    ├── rl_features.py    # 8 actions (adds PROSPECT), 17 scalar features
-    ├── rl_model.py
-    ├── rl_train.py
-    ├── rl_eval.py
-    ├── rl_collect.py
-    └── checkpoints/      # Training output (start fresh)
+├── rl_v2/                # Archived – exploration bot with PROSPECT action
+├── rl_v3/                # Archived – dropoff-heuristic bot (benchmark opponent)
+└── rl_v4/                # Active – learned dropoff, production-aligned reward
+    ├── README.md         # rl_v4 overview + commands
+    ├── rl_features.py    # 9 actions (adds DROPOFF), 14 channels, 29 scalars
+    ├── rl_bot.py rl_env.py rl_model.py rl_train.py rl_eval.py rl_collect.py
+    ├── gen_replay_v4.py  # rl_v4-vs-rl_v3 replay generator
+    └── checkpoints/      # Training output (weights tracked for replication)
 ```
+See `my_extension/CHANGELOG.md` for the change history.
 
