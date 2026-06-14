@@ -1,0 +1,10 @@
+# my_extension-local ignore rules (kept here to contain changes to my_extension/)
+
+# Transient per-game bot subprocess logs
+bot-*.log
+
+# Archived / degenerate training runs (kept locally only)
+rl_v4/checkpoints_*/
+
+# NOTE: rl_v3/rl_v4 active checkpoints/ (incl. *.pt weights) ARE tracked on
+# purpose, for experiment replication.
