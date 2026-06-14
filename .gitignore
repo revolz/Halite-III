@@ -525,3 +525,9 @@ xcuserdata/
 #################
 # Old archived checkpoint folder (removed from tracking; too large for git)
 my_extension/rl_v1/checkpoints_v9/
+# Transient per-game bot subprocess logs
+my_extension/**/bot-*.log
+# rl_v4 archived training runs (degenerate; kept locally only)
+my_extension/rl_v4/checkpoints_*/
+# NOTE: rl_v3/rl_v4 active checkpoints/ (incl. *.pt weights) ARE tracked
+# on purpose, for experiment replication.
