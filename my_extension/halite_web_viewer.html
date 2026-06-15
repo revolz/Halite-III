@@ -254,12 +254,24 @@
       if (f !== lastFrame){ lastFrame = f; renderFrame(f); }
     }
 
-    // y-axis max across all players/frames, rounded up to a clean k, min 5000
-    let chartMax = 5000, energySeries = null;
+    // y-axis max + tick step across all players/frames, snapped to "nice" round
+    // numbers so every gridline label is exact (no rounding artifacts).
+    let chartMax = 5000, chartStep = 1000, energySeries = null;
+    // Pick a max/step from the 1/2/2.5/5 x10^n family targeting ~5 intervals.
+    function niceAxis(m){
+      if (!(m > 0)) return { max: 1000, step: 200 };
+      const raw = m / 5, mag = Math.pow(10, Math.floor(Math.log10(raw))), norm = raw / mag;
+      const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 2.5 ? 2.5 : norm <= 5 ? 5 : 10) * mag;
+      return { max: Math.ceil(m / step) * step, step };
+    }
     function computeSeries(){
-      energySeries = replay.players.map((p,i)=> stats.frames.map(fr => (fr.players[i]||fr.players[String(i)]||{}).currentEnergy||0));
+      // Source banked halite straight from full_frames[f].energy (energy at end of turn f).
+      // stats.frames[f].currentEnergy is lagged by one turn, so we don't use it here.
+      const init = replay.GAME_CONSTANTS.INITIAL_ENERGY;
+      energySeries = replay.players.map((p,i)=> replay.full_frames.map(fr =>
+        (fr.energy && fr.energy[i] != null) ? fr.energy[i] : init));
       let m = 0; energySeries.forEach(s=>s.forEach(v=>{ if(v>m)m=v; }));
-      chartMax = Math.max(5000, Math.ceil(m/1000)*1000);
+      const ax = niceAxis(m); chartMax = ax.max; chartStep = ax.step;
     }
 
     function renderFrame(f){
@@ -272,29 +284,34 @@
         + `<div class="sub">Seed: ${replay.map_generator_seed!=null?replay.map_generator_seed:'—'}</div></div>`
         + `<div><div class="k">Halite Available</div><div class="v">${Math.round(fr.remainingHalite).toLocaleString()}</div></div>`
         + `<div><div class="k">Halite Collected</div><div class="v">${collected.toFixed(2)}%</div></div>`;
-      // players
-      const totEnergy = replay.players.reduce((t,p,i)=> t + ((fr.players[i]||fr.players[String(i)]||{}).currentEnergy||0), 0) || 1;
+      // players — banked halite for frame f comes from full_frames[f].energy (not the
+      // one-turn-lagged stats.frames[f].currentEnergy); other counts stay from stats.
+      const energyAt = (i)=> {
+        const e = replay.full_frames[f].energy;
+        return (e && e[i] != null) ? e[i] : replay.GAME_CONSTANTS.INITIAL_ENERGY;
+      };
+      const totEnergy = replay.players.reduce((t,p,i)=> t + energyAt(i), 0) || 1;
       replay.players.forEach((p,i)=>{
         const ps = fr.players[i] || fr.players[String(i)] || {};
-        $('score-'+i).textContent = Math.round(ps.currentEnergy||0).toLocaleString();
-        $('pct-'+i).textContent = (((ps.currentEnergy||0)/totEnergy)*100).toFixed(2)+'%';
+        $('score-'+i).textContent = Math.round(energyAt(i)).toLocaleString();
+        $('pct-'+i).textContent = ((energyAt(i)/totEnergy)*100).toFixed(2)+'%';
         $('ships-'+i).textContent = ps.currentShips||0;
         $('drops-'+i).textContent = ps.currentDropoffs||0;
         $('coll-'+i).textContent = ps.currentCollisions||0;
-        drawChart($('chart-'+i), energySeries[i], chartMax, f, colorFor(i));
+        drawChart($('chart-'+i), energySeries[i], chartMax, chartStep, f, colorFor(i));
       });
     }
 
-    function drawChart(svg, series, maxY, cur, color){
+    function drawChart(svg, series, maxY, stepY, cur, color){
       const W = Math.max(220, svg.clientWidth || (svg.parentElement && svg.parentElement.clientWidth) || 360);
       const H = 130, mL=34, mR=10, mT=10, mB=14, n = series.length;
       svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
       const px = (i)=> mL + (n<=1?0:(i/(n-1))*(W-mL-mR));
       const py = (v)=> mT + (1 - v/maxY)*(H-mT-mB);
       let s = '';
-      for (let k=0;k<=5;k++){ const v=maxY*k/5, y=py(v);
+      for (let v=0; v<=maxY+1e-6; v+=stepY){ const y=py(v), k=v/1000;
         s += `<line class="gridline" x1="${mL}" y1="${y}" x2="${W-mR}" y2="${y}"/>`;
-        s += `<text class="axislbl" x="2" y="${y+3}">${Math.round(v/1000)}k</text>`; }
+        s += `<text class="axislbl" x="2" y="${y+3}">${Number.isInteger(k)?k:k.toFixed(1)}k</text>`; }
       let dline=''; for (let i=0;i<n;i++){ dline += (i?'L':'M')+px(i).toFixed(1)+' '+py(series[i]).toFixed(1)+' '; }
       s += `<path d="${dline}" fill="none" stroke="${color}" stroke-width="1.4" stroke-dasharray="1 6" opacity="0.85"/>`;
       const c = Math.max(0, Math.min(cur, n-1));
