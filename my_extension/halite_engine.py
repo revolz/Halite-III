@@ -776,11 +776,22 @@ class HaliteEngine:
                     'location': {'x': dest[0], 'y': dest[1]},
                     'ships': list(arrivals),
                 })
+                dest_owner = self.cell_owner.get(dest)
                 for eid in arrivals:
                     owner = self.entities[eid]['owner']
+                    cargo = self.entities[eid]['cargo']
                     self._all_collisions[owner] += 1
-                    self._total_dropped[owner] += self.entities[eid]['cargo']
-                    self._dump_halite(dest, self.entities[eid]['cargo'])
+                    if dest_owner is not None and owner == dest_owner:
+                        # A ship wrecking on its OWNER's shipyard/dropoff still banks
+                        # its cargo — the structure absorbs it before the wreck.  This
+                        # matches Halite III and is what lets the end-game "home
+                        # sacrifice" deposit halite instead of losing it on collision.
+                        if cargo > 0:
+                            self.players[owner]['energy'] += cargo
+                            self._total_deposited[owner] += cargo
+                    else:
+                        self._total_dropped[owner] += cargo
+                        self._dump_halite(dest, cargo)
                     del self.entities[eid]
                 self.cell_entity[dest] = None
                 self.changed_cells.add(dest)
