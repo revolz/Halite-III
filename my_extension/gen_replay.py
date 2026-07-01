@@ -225,7 +225,7 @@ def main():
         run_greedy_vs_greedy(args.width, args.height, seed, out)
 
     print(f"\nView with:")
-    print(f"  C:\\Users\\PCTeo\\Miniconda3\\python.exe replay_viewer.py \"{out}\"")
+    print(f"  python replay_viewer.py \"{out}\"")
 
 
 if __name__ == '__main__':
