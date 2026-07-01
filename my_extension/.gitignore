@@ -1,10 +1,30 @@
-# my_extension-local ignore rules (kept here to contain changes to my_extension/)
+# my_extension — all local ignore rules live here (one file, consistent across bots)
 
-# Transient per-game bot subprocess logs
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Bot subprocess logs
 bot-*.log
 
-# Archived / degenerate training runs (kept locally only)
+# -----------------------------------------------------------------------
+# Training artifacts — large or recreatable; commit deliberately to share
+# -----------------------------------------------------------------------
+
+# rl_v1: superseded archived training run
+rl_v1/checkpoints_v9/
+
+# rl_v4: degenerate training runs (active checkpoints/ ARE tracked — see README)
 rl_v4/checkpoints_*/
 
-# NOTE: rl_v3/rl_v4 active checkpoints/ (incl. *.pt weights) ARE tracked on
-# purpose, for experiment replication.
+# rl_v6: abandoned bot — dataset, replays, and trained weights are not kept
+rl_v6/dataset/
+rl_v6/dataset_*/
+rl_v6/replays_v6/
+rl_v6/replays_*/
+rl_v6/checkpoints/*.pt
+rl_v6/checkpoints_*/
+
+# rl_v7: dataset too large for git (features.csv=505 MB, patches.npy=2.2 GB)
+rl_v7/dataset/
+rl_v7/checkpoints_*/
