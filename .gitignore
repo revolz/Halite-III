@@ -452,7 +452,6 @@ starterpackages/
 
 *.hlt
 !interestingGame.hlt
-!my_extension/replays/*.hlt
 
 google*.html
 
@@ -525,3 +524,6 @@ xcuserdata/
 #################
 # Old archived checkpoint folder (removed from tracking; too large for git)
 my_extension/rl_v1/checkpoints_v9/
+
+# rl_v7 large training artifacts (recreatable; too large for git)
+my_extension/rl_v7/dataset/

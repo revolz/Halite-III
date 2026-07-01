@@ -522,12 +522,15 @@ class HaliteEngine:
         # Rank players by final energy (descending)
         ranked_pids = sorted(range(self.num_players),
                              key=lambda pid: -self.players[pid]['energy'])
-        player_stats = []
-        for rank, pid in enumerate(ranked_pids, 1):
+        pid_to_rank = {pid: rank for rank, pid in enumerate(ranked_pids, 1)}
+        # player_statistics is indexed by player_id so viewers can do player_statistics[player_id]
+        player_stats = [None] * self.num_players
+        for pid in range(self.num_players):
+            rank = pid_to_rank[pid]
             lifespan = sum(
                 1 for _ in self.player_entities[pid]
             ) if self.player_entities[pid] else 0
-            player_stats.append({
+            player_stats[pid] = {
                 'player_id': pid,
                 'rank': rank,
                 'last_turn_alive': self._last_turn_alive.get(pid, self.turn),
@@ -552,7 +555,7 @@ class HaliteEngine:
                 'average_entity_distance': 0,
                 'halite_per_dropoff': {},
                 'random_id': 0,
-            })
+            }
 
         game_statistics = {
             'number_turns': self.turn,
