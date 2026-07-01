@@ -7,24 +7,9 @@ __pycache__/
 # Bot subprocess logs
 bot-*.log
 
-# -----------------------------------------------------------------------
 # Training artifacts — large or recreatable; commit deliberately to share
-# -----------------------------------------------------------------------
-
-# rl_v1: superseded archived training run
-rl_v1/checkpoints_v9/
-
-# rl_v4: degenerate training runs (active checkpoints/ ARE tracked — see README)
-rl_v4/checkpoints_*/
-
-# rl_v6: abandoned bot — dataset, replays, and trained weights are not kept
-rl_v6/dataset/
-rl_v6/dataset_*/
-rl_v6/replays_v6/
-rl_v6/replays_*/
-rl_v6/checkpoints/*.pt
-rl_v6/checkpoints_*/
-
-# rl_v7: dataset too large for git (features.csv=505 MB, patches.npy=2.2 GB)
-rl_v7/dataset/
-rl_v7/checkpoints_*/
+checkpoints_*/
+**/checkpoints/*.pt
+dataset/
+dataset_*/
+replays_*/
