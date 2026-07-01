@@ -7,7 +7,7 @@ __pycache__/
 # Bot subprocess logs
 bot-*.log
 
-# Training artifacts — large or recreatable; commit deliberately to share
+# Training artifacts
 checkpoints_*/
 **/checkpoints/*.pt
 dataset/
