@@ -12,6 +12,7 @@ Shared weights across all ships (ship-centric observations handle identity).
 """
 
 import os
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -254,5 +255,5 @@ class ActorCritic(nn.Module):
                 partial += 1
         model.load_state_dict(sd_new)
         print(f"  load_expand: {copied} params copied, {partial} actor head(s) "
-              f"partially transferred from {os.path.basename(path)}")
+              f"partially transferred from {os.path.basename(path)}", file=sys.stderr)
         return model

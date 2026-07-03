@@ -366,7 +366,7 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
 
     # Initialise the Halite game
     game = hlt.Game()
-    game.ready("RLBot")
+    game.ready("rl_v2")
 
     # Ships currently committed to going home (mirrors rl_env home memory)
     homing_ships: set = set()

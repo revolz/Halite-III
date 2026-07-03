@@ -330,7 +330,7 @@ def main(model_path, spawn_path, device_str='cpu', deterministic=False,
         spawn_head = SpawnHead.load(spawn_path, device=device_str)
 
     game = hlt.Game()
-    game.ready("RLv6Bot")
+    game.ready("rl_v6")
 
     _dir_map = {'n': Direction.North, 's': Direction.South,
                 'e': Direction.East,  'w': Direction.West}
