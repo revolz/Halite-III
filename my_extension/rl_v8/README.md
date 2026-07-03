@@ -15,7 +15,7 @@ a queued path buffer `self.mcp_step`) persisted in a `revolz_fleet` dict
 (`MyBot.py:640,717-718,729-730`).
 
 This is the same category of problem that capped `rl_v7`'s imitation of
-`rl_v5` (also an FSM) at ~58% behavioral-cloning match rate and caused it to
+`rl_v5` (also an FSM) at ≈58% behavioral-cloning match rate and caused it to
 lose every match (see `rl_v7/README.md`, "Status & Conclusions"). **The owner
 explicitly chose to build rl_v8 without a shadow-FSM feature fix**, to test
 whether the same ceiling reappears against a different FSM-based target bot.
@@ -133,7 +133,7 @@ python rl_v8/bc_train.py --epochs 30 --device cuda
 ```
 
 Report the val match-rate plainly -- this is the specific hypothesis being
-tested (does imitating a different FSM bot also plateau around ~55-60%?).
+tested (does imitating a different FSM bot also plateau around ≈55-60%?).
 
 ### 4. Evaluate BC bot vs rl_v5 and rl_v7
 

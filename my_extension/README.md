@@ -13,16 +13,32 @@ live in each folder's README; this file is the high-level lineage.
 
 ## Version lineage: objective → outcome
 
+*Terms: **BC** = behavioral cloning (train a network to imitate a bot from
+its replays). **PPO** = reinforcement learning by playing games. **FSM** =
+hand-coded finite state machine (per-ship states like MINING/RETURNING).*
+
 | Bot | Objective | Outcome & main lesson |
 |---|---|---|
-| **rl_v1–v2** | Earliest from-scratch PPO experiments: get a learning bot to play the game at all | Superseded; kept as frozen benchmarks (pre-documentation era) |
-| **rl_v3** | From-scratch PPO with macro-actions | Worked as a baseline, with skeletons in the closet found later: its "self-play" phase never actually engaged, and it never built dropoffs (spawn drained the bank below the dropoff threshold) |
-| **rl_v4** | Beat rl_v3; make dropoff a *learned* action | Achieved. Paid the classic RL tuition: a bank-margin reward was hacked by capital-hoarding (99% "wins" while depositing 0), and an outlier game caused entropy collapse — fixed by a deposited-anchored reward, reward scaling, and entropy guards |
-| **rl_v5** | Beat rl_v4 | Achieved decisively (≈23.6k vs 4.5k halite) — but the post-mortem mattered more: the net had never specialised (entropy ≈ max), so the strength was really the hand-coded FSM (PROSPECT/HARVEST/HOME/ESCAPE) it was given as a prior. rl_v5 is in truth a **rule-based bot with an RL veneer** — which made it the perfect foil for everything after |
-| **rl_v6** | *Pure* RL: imitate then beat rl_v5 with zero hand-coded rules at inference (learned spawn too) | **Failed** (0/15 vs rl_v5). Key insight: independent per-ship networks cannot represent joint collision resolution — fleets self-destruct; and PPO consistently eroded the BC policy instead of improving it |
-| **rl_v7** | Beat rl_v5 via imitation (BC on rl_v5 replays) + PPO, with a hand-coded collision resolver | **Failed** (~25% best). Discovered the **FSM ceiling**: a stateless per-turn policy can only match ~58% of a bot whose decisions depend on hidden per-ship state. Proposed the fix (shadow-FSM features) that rl_v9 later used |
-| **rl_v8** | Pivot: imitate **V71**, the 2019 hand-coded bot, after V71 swept a pitch vs rl_v5 (9–1) and rl_v7 (10–0) | **Failed, informatively.** BC alone already won 67% vs V71 — then PPO destroyed it (→ ~20%), and the ~58% BC match ceiling reappeared against a second FSM target. Its autopsy (GAE across interleaved ships, untrained shared-trunk critic, no done-flags on death, no KL guard, no eval gating, stateless-vs-FSM) became rl_v9's design document |
-| **rl_v9** | Beat V71 >50% with spawn, dropoff, and enemy-combat behaviour **all learned** | **ACHIEVED: 258/450 = 57.3%** (95% CI 52.8–61.9%). FleetMemory features broke the FSM ceiling (BC match 58% → 86.9%); gated PPO improved on BC for the first time in the project (eval margin −1712 → +5973) |
+| **rl_v1–v2** | First from-scratch RL experiments: play the game at all | Superseded; kept as frozen benchmarks |
+| **rl_v3** | From-scratch PPO with macro-actions: besides the 5 basic moves, the policy could pick HOME (auto-walk to a deposit) or PROSPECT (auto-walk to rich halite) | Became the baseline. Flaws found later: its "self-play" never actually ran, and it never built dropoffs |
+| **rl_v4** | Beat rl_v3; make dropoff building a *learned* decision | **Achieved.** Lesson: rewards get gamed — a bank-based reward gave 99% "wins" with zero halite deposited; fixed by rewarding deposits directly |
+| **rl_v5** | Beat rl_v4 | **Achieved decisively** (≈23.6k vs 4.5k halite). But the strength came from its hand-coded FSM, not the network — rl_v5 is really a **rule-based bot with an RL veneer**. That made it the perfect benchmark: could a *truly* learned bot beat it? |
+| **rl_v6** | Beat rl_v5 with *pure* learning — zero hand-coded rules, spawn included | **Failed** (0/15). Lesson: ships deciding independently can't avoid crashing into each other — some hand-coded collision resolution is necessary |
+| **rl_v7** | Beat rl_v5 by imitating its replays (BC), then improving with PPO; hand-coded collision resolver allowed | **Failed** (≈25% wins). Discovered the **≈58% imitation ceiling** (explained below) and proposed the memory-feature fix that rl_v9 later used |
+| **rl_v8** | Beat rl_v5 and rl_v7 by imitating a stronger teacher: **V71**, the hand-coded 2019 bot, which had just crushed both (9–1, 10–0) | **Failed.** PPO made the bot *worse*, not better (early 4-of-6 vs V71 → ≈20%), and the same ≈58% imitation ceiling reappeared. Diagnosing *why* PPO failed (six bugs, listed in `rl_v9/README.md`) became rl_v9's design document |
+| **rl_v9** | Beat V71 >50%, with moves, spawn, dropoffs and combat **all learned** | **ACHIEVED: 57.3% over 450 games** (95% CI 52.8–61.9%). FleetMemory features broke the imitation ceiling (58% → 86.9% match); fixed PPO improved on BC for the first time in the project. Also beats rl_v8 head-to-head (75% over 100 games) |
+
+**The ≈58% imitation ceiling (the "FSM ceiling"), explained:** behavioral
+cloning trains a network to predict, from the board, the action the teacher
+took. But rl_v5 and V71 are finite state machines: each ship carries hidden
+state (e.g. "I'm RETURNING", a queued path), so two identical-looking boards
+can get different actions. A board-only network cannot predict those turns —
+its match rate stalls at ≈58% regardless of training, a missing-information
+limit, not a tuning problem. rl_v7 hit it first (vs rl_v5); rl_v8 hit it
+again (vs V71), proving the cause was statelessness, not the teacher. rl_v9
+broke it by feeding the network FleetMemory — a small per-ship memory
+(homing flag, last action, stuck counter) approximating the teacher's hidden
+state — lifting match rate to 86.9%.
 
 ## rl_v9 vs V71 — learned bot vs hand-coded bot
 
@@ -63,8 +79,8 @@ strategy was never designed by anyone; it emerged from the reward:
 | Emergent behaviour (from replay analysis) | Evidence |
 |---|---|
 | **Positional suppression** — squat the halite V71's ROI formula wants; V71's own hard-coded enemy avoidance freezes it | 13 of 34 wins in one batch held V71 under 5k halite (extremes: 148, 376) |
-| Surgical, not suicidal, combat | ~0.7 enemy collisions per game, every one a clean 1-for-1 trade (35 lost / 35 killed over 50 games) |
-| Disciplined fleet | 0 open-field self-collisions in 50 games; ~5.7 intentional endgame cargo-banking wrecks per game |
+| Surgical, not suicidal, combat | ≈0.7 enemy collisions per game, every one a clean 1-for-1 trade (35 lost / 35 killed over 50 games) |
+| Disciplined fleet | 0 open-field self-collisions in 50 games; ≈5.7 intentional endgame cargo-banking wrecks per game |
 | V71's remaining crown | On an uncontested rich board V71 still out-mines rl_v9 (blowouts up to 74k) — the open problem for any rl_v10 |
 
 The honest asterisk, documented throughout — what is and isn't learned:

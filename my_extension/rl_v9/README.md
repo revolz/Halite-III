@@ -14,7 +14,7 @@ hand-coded.
 
 rl_v8's own PPO log (`rl_v8/checkpoints/ppo_log.csv`) shows the BC policy at
 episode 1 **winning 67%** of games vs V71 (14.2k vs 11.6k deposits) — and PPO
-then steadily destroying it (by ep200: ~14k vs ~24k, ~20% wins).  The owner's
+then steadily destroying it (by ep200: ≈14k vs ≈24k, ≈20% wins).  The owner's
 observation "BC is a good start, PPO always makes it worse" is exactly what
 the data shows.  Diagnosed causes and fixes:
 
@@ -25,7 +25,7 @@ the data shows.  Diagnosed causes and fixes:
 | 3 | Ships that died mid-game never got `done=1` (bootstrap leaked across death) | Every ship sequence ends `done=1` on death/conversion/game end |
 | 4 | No guard on policy drift per update | KL early stopping (`TARGET_KL=0.02`) + BC-anchor KL regularisation, annealed 1.0 → 0.1 over 150 episodes |
 | 5 | Degradation was silent; final checkpoint = last checkpoint | **Eval gating**: every 20 episodes, deterministic games vs V71; `best.pt` is only ever replaced by a strictly better (win-rate, margin) score. Baseline eval of BC runs first, so PPO can never end worse than BC unnoticed |
-| 6 | **Stateless policy vs an FSM target**: V71 keeps hidden per-ship state (RETURNING + a queued min-cost path), capping BC match rate at ~58% | `FleetMemory` features: sticky homing flag (set at cargo ≥ 0.8, cleared on deposit — mirrors V71's `enough=0.8`), previous executed action (one-hot), stuck counter. Reproduced identically in replay collection, the RL env, and the live bot |
+| 6 | **Stateless policy vs an FSM target**: V71 keeps hidden per-ship state (RETURNING + a queued min-cost path), capping BC match rate at ≈58% | `FleetMemory` features: sticky homing flag (set at cargo ≥ 0.8, cleared on deposit — mirrors V71's `enough=0.8`), previous executed action (one-hot), stuck counter. Reproduced identically in replay collection, the RL env, and the live bot |
 | 7 | Hand-coded spawn rule with `MAX_FLEET=16` cap | **Learned spawn**: a `SpawnPolicy` net (18 global scalars + factory-centred 8x8x4 coarse map) BC-trained on V71's own `g` commands, PPO fine-tuned. Only mask: `bank >= 1000` |
 | 8 | Dropoffs gated by rl_v5 heuristics; PPO had no reward for them (never built any) | **Learned dropoff**: mask is physical only (cell unowned + affordable). BC learns V71's timing; PPO prices the construct honestly (reward = actual bank delta) and the payoff arrives as deposit rewards at the new dropoff |
 | 9 | Resolver forced ships to STAY near enemies / flee enemy-adjacent cells — enemy collisions were impossible, traffic jams unresolvable | Resolver is **friendly-only**. Enemy interactions are the policy's decision; the reward prices a wreck as `(enemy cargo + enemy hull value) − (own cargo + own hull value)`, hull value = `1000·min(1, turns_left/200)`. Wrecking on your own structure banks cargo (endgame pile-on) and is credited as a deposit |
@@ -81,13 +81,13 @@ python rl_v9/rl_eval.py --model rl_v9/checkpoints/best.pt --games 50 --save-repl
 *(filled in as runs complete)*
 
 * Smoke BC (2 games, 2 epochs): ship val match **68.4%** — already above
-  rl_v8's ~58.5% ceiling from 300 games/30 epochs, confirming the memory
+  rl_v8's ≈58.5% ceiling from 300 games/30 epochs, confirming the memory
   features unlock the FSM-hidden-state plateau.
 
 ### Run log (2026-07-03)
 
 **Data — 200 replays** (170 V71-vs-rl_v5 stochastic + 30 V71 self-play, 32x32).
-The first generation run died silently at 67 games (~3:37 AM; `gen_games.log`
+The first generation run died silently at 67 games (≈3:37 AM; `gen_games.log`
 empty — machine sleep or killed process suspected, not a crash) and was topped
 up with `--games 103 --selfplay 30`.
 
@@ -103,7 +103,7 @@ up with `--games 103 --selfplay 30`.
 Spawn labels: YES 8.9% (5,561 rows). Alignment sanity check 7818/7818 =
 **100.0% OK**. STAY dominance is handled by class-weighted CE in `bc_train.py`
 (cap 10x) — no `--stay-keep` downsampling needed. DROPOFF is inherently thin
-(~1 dropoff per game seat); even weighted it may train soft — PPO's honest
+(≈1 dropoff per game seat); even weighted it may train soft — PPO's honest
 dropoff reward is the intended backstop.
 
 **BC (40 epochs, cuda)** — the FleetMemory features didn't just crack the
@@ -111,7 +111,7 @@ FSM-hidden-state plateau, they nearly closed it:
 
 | Run | Data | Ship val match |
 |---|---|---|
-| rl_v8 BC (no memory features) | 300 games, 30 epochs | ~58.5% (the FSM ceiling) |
+| rl_v8 BC (no memory features) | 300 games, 30 epochs | ≈58.5% (the FSM ceiling) |
 | rl_v9 smoke BC | 2 games, 2 epochs | 68.4% |
 | **rl_v9 full BC** | 200 games, 40 epochs | **86.91%** |
 
@@ -125,7 +125,7 @@ ones) — classic off-distribution snowballing. Those collapse games are PPO's
 cheapest win-rate headroom: it doesn't need to outplay V71 there, just not
 fall apart.
 
-**PPO run COMPLETE** (`rl_train.py --episodes 300 --device cuda`, ~70-100s/ep).
+**PPO run COMPLETE** (`rl_train.py --episodes 300 --device cuda`, ≈70-100s/ep).
 **PPO improved on BC — the first time across v6/v7/v8/v9 that RL made the
 imitation policy better instead of worse.**
 
@@ -151,18 +151,18 @@ Gate-eval trajectory (every 20 eps, 9 deterministic games each):
 | 300 (two seed sets) | 0.56 / 0.67 | −4462 / +992 | endpoint weaker than the ep-160 peak |
 
 * `best.pt` = the **episode-160** policy: same 7/9 wr as BC but margin swung
-  -1712 → +5973 (~7.7k) — PPO fixed the blowout-loss pattern rather than
+  -1712 → +5973 (≈7.7k) — PPO fixed the blowout-loss pattern rather than
   winning more eval games. Eval mean deposits 10.4k (BC) → 15-18k late.
 * What PPO changed, early vs late run (rollout batches of 6 games):
 
   | Rollout stat | Early (eps 16-60) | Late (eps 200-300) |
   |---|---|---|
   | Kills per batch | 1-8 | 8-23 (learned collision-trading — no scripted enemy avoidance) |
-  | Spawns per batch | ~120-190 | ~200-280 |
-  | Deposit batches | ~9-21k | ~11-32k (peak 31.7k, ep 201) |
+  | Spawns per batch | ≈120-190 | ≈200-280 |
+  | Deposit batches | ≈9-21k | ≈11-32k (peak 31.7k, ep 201) |
   | Entropy | 0.12-0.18 | 0.14-0.22 — slight RISE, still exploring, no collapse |
   | KL per update | 0.001-0.006 | 0.003-0.013 — never hard-tripped the 0.02 brake |
-  | vloss | spiked ~2.0 at ep 16 | settled ~0.5-1.2 |
+  | vloss | spiked ≈2.0 at ep 16 | settled ≈0.5-1.2 |
 * Post-peak wandering: evals after ep 160 oscillated 0.44-0.67 and the ep-300
   endpoint (0.56/0.67) is weaker than the ep-160 snapshot — the gate, not the
   endpoint, is what saved the peak (rl_v8 would have shipped the endpoint).
@@ -186,7 +186,7 @@ Five eval batches of `best.pt` (deterministic, random seeds):
 **95% CI 52.8-61.9% — the whole interval clears 50%** (p ≈ 0.001). A bot
 with fully learned moves, spawning, dropoffs, and enemy-collision behaviour
 beats the strongest 2019 hand-coded bot. The early "decline" (68→59→52)
-reversed in batches 4-5 — pure sampling scatter around a frozen model; ~57%
+reversed in batches 4-5 — pure sampling scatter around a frozen model; ≈57%
 is the definitive strength estimate.
 
 Pooled mean halite is a caveat (see table): V71 slightly ahead despite
@@ -210,6 +210,24 @@ Replays of the 50-game batch plus two 5-game viewing batches were saved to
 `rl_v9/replays/` via `--save-replays` (local only — `*.hlt` is gitignored;
 regenerate with the command above).
 
+### Head-to-head vs rl_v8 (2026-07-03): 75/100 = 75.0%
+
+Direct pitch of `rl_v9/checkpoints/best.pt` against rl_v8's strongest
+checkpoint `rl_v8/checkpoints/bc.pt` (rl_v8's PPO degraded its BC policy,
+so BC is its best). Both deterministic, via `run_game.py` on 32x32, seats
+alternated each game, no replays kept.
+
+| Batch | Seeds | Games | rl_v9 wins | Win rate | Mean halite (rl_v9 / rl_v8) |
+|---|---|---|---|---|---|
+| Pilot | 1-10 | 10 | 6 | 60.0% | 23,695 / 16,828 |
+| Main | 11-110 | 100 | 75 | 75.0% | 29,720 / 16,674 |
+| **Pooled** | 1-110 | **110** | **81** | **73.6%** | — |
+
+Main batch: 95% CI 66.5-83.5%, binomial p < 0.0001 vs 50% — conclusive.
+Unlike the V71 matchup (57.3% wins but out-mined on average), rl_v9
+dominates rl_v8 on both axes, out-mining it ≈1.8x. The 6/10 pilot
+understated the gap — small samples lie in this matchup too.
+
 ## Reading the rl_train log (notes from the 2026-07-03 run)
 
 All games — evals and rollouts — are rl_v9 vs the real V71 bot
@@ -220,7 +238,7 @@ All games — evals and rollouts — are rl_v9 vs the real V71 bot
   wr swinging 0.5-1.0 between episodes is scatter, not learning).
   `kl`/`ent` are exactly 0 during `[warmup]` — proof the policy is untouched;
   they go nonzero when the tag flips to `[ppo]` at ep 16 (watch kl stay
-  ≤ ~0.02, the early-stop target). `lbc` = BC-anchor KL coefficient,
+  ≤ ≈0.02, the early-stop target). `lbc` = BC-anchor KL coefficient,
   annealing 1.0 → 0.1 over 150 eps. `drop`/`spawn` = learned heads acting.
 * **`vloss`** = critic (value net) MSE vs realized returns. The only live
   training signal during warmup. It is *bouncy by nature* — each episode is
@@ -234,7 +252,7 @@ All games — evals and rollouts — are rl_v9 vs the real V71 bot
   deposit). Watch kills/outcomes for whether collision-trading is learned.
 * **Small-sample warning**: evals are only 9 deterministic games
   (`--eval-games 9`). BC's 0.78 baseline = 7/9 — consistent with the same
-  ~50-65% bot that scored 10/20 in the standalone eval. Negative margin at
+  ≈50-65% bot that scored 10/20 in the standalone eval. Negative margin at
   high wr = narrow wins, blowout losses (the BC collapse-game pattern).
 * **Gate consequence**: a lucky-high baseline sets a *stricter* gate — PPO
   needs 8/9, or 7/9 with better margin, to log `*** new best ***`. Slower to
