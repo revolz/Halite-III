@@ -425,7 +425,7 @@ class PPOTrainer:
             'optim_state': self.optim.state_dict(),
             'episode':     total_eps,
         }, final_path)
-        self.model.save(os.path.join(cfg['checkpoint_dir'], 'model_final_weights.pt'))
+        self.model.save(os.path.join(cfg['checkpoint_dir'], 'best.pt'))
         print(f"\nTraining complete. Final model: {final_path}")
         print(f"Training log:    {log_path}")
         return self.model

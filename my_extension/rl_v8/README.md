@@ -6,6 +6,11 @@ learning from the user's old hand-coded 2019 bot, `Year 2019/MyBot - V71`,
 which swept a head-to-head pitch against both current RL bots (9-1 combined
 vs rl_v5, 10-0 vs rl_v7 across two match sets).
 
+**Published checkpoint:** `checkpoints/best.pt` is the final **BC** policy
+(the file the pipeline below writes as `bc.pt`) — rl_v8's strongest, because
+its PPO run degraded the BC policy rather than improving it (the failure
+rl_v9 was built to diagnose). PPO snapshots stay local.
+
 ## Design note: this is the "pure stateless BC" variant, on purpose
 Before building this, we read V71's full source (`MyBot.py`, 739 lines) and
 found it is **not** a simple stateless heuristic -- it's a per-ship finite
@@ -170,7 +175,7 @@ Target: win rate > 50% vs **both** rl_v5 and rl_v7.
 ```powershell
 python run_game.py `
   --bot "python -u rl_v8/rl_bot.py --model rl_v8/checkpoints/ppo_final.pt --deterministic" `
-  --bot "python -u rl_v5/rl_bot.py --model rl_v5/checkpoints/model_final_weights.pt --deterministic" `
+  --bot "python -u rl_v5/rl_bot.py --model rl_v5/checkpoints/best.pt --deterministic" `
   --replay --verbose
 ```
 

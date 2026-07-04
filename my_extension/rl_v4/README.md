@@ -33,13 +33,13 @@ retrain / raise `--ent-coef`). Don't judge by win rate alone — check `deposite
 ## Evaluate & replay
 ```bash
 # Head-to-head vs an archived bot (each uses its own features, via hlt protocol)
-python rl_eval.py --model checkpoints/model_final_weights.pt --opponent rl_v3 --games 50
+python rl_eval.py --model checkpoints/best.pt --opponent rl_v3 --games 50
 
 # Replay vs rl_v3 — run from my_extension/ ; writes .hlt to replays/,
 # view with replay_viewer.py
 python run_game.py --replay --width 32 --height 32 \
-  --bot "python -u rl_v4/rl_bot.py --model rl_v4/checkpoints/model_final_weights.pt" \
-  --bot "python -u rl_v3/rl_bot.py --model rl_v3/checkpoints/model_final_weights.pt"
+  --bot "python -u rl_v4/rl_bot.py --model rl_v4/checkpoints/best.pt" \
+  --bot "python -u rl_v3/rl_bot.py --model rl_v3/checkpoints/best.pt"
 ```
 
 ## Notes

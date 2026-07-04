@@ -542,7 +542,7 @@ class PPOTrainer:
         rl_v3_opp_fn = None
         if cfg.get('opponent') == 'rl_v3':
             w = cfg.get('rl_v3_weights') or os.path.join(
-                _MY_EXT, 'rl_v3', 'checkpoints', 'model_final_weights.pt')
+                _MY_EXT, 'rl_v3', 'checkpoints', 'best.pt')
             if not os.path.isfile(w):
                 raise FileNotFoundError(f"rl_v3 weights not found: {w}")
             print(f"Opponent = fixed rl_v3 bot ({w}); "
@@ -553,7 +553,7 @@ class PPOTrainer:
         rl_v4_opp_fn = None
         if cfg.get('opponent') == 'rl_v4':
             w = cfg.get('rl_v4_weights') or os.path.join(
-                _MY_EXT, 'rl_v4', 'checkpoints', 'model_final_weights.pt')
+                _MY_EXT, 'rl_v4', 'checkpoints', 'best.pt')
             if not os.path.isfile(w):
                 raise FileNotFoundError(f"rl_v4 weights not found: {w}")
             print(f"Opponent = fixed rl_v4 bot ({w}); "
@@ -687,7 +687,7 @@ class PPOTrainer:
             'optim_state': self.optim.state_dict(),
             'episode':     total_eps,
         }, final_path)
-        self.model.save(os.path.join(cfg['checkpoint_dir'], 'model_final_weights.pt'))
+        self.model.save(os.path.join(cfg['checkpoint_dir'], 'best.pt'))
         print(f"\nTraining complete. Final model: {final_path}")
         print(f"Training log:    {log_path}")
         return self.model

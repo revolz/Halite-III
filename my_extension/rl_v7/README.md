@@ -169,4 +169,4 @@ PPO with KL regularisation stabilised entropy but could not learn what the featu
 
 - **Add shadow FSM to rl_v7**: run a per-ship FSM in `rl_env.py` and `rl_bot.py`, expose PROSPECT/HARVEST/HOME/ESCAPE as scalar features. Directly lifts the 58.5% BC ceiling.
 - **Add home-memory flag**: sticky "this ship is going home" flag cleared on deposit — mirrors rl_v5's `homing_ships` set.
-- **Best checkpoint for replay**: `checkpoints/ppo_ep0050.pt` produced the most competitive play (wins on seeds 1000, 1004, 1005 — rl_v7 scoring 7–9k vs rl_v5 scoring 2–6k on those maps).
+- **Best checkpoint for replay**: `checkpoints/ppo_ep0050.pt` produced the most competitive play (wins on seeds 1000, 1004, 1005 — rl_v7 scoring 7–9k vs rl_v5 scoring 2–6k on those maps). It is published in the repo as `checkpoints/best.pt` (the repo-wide convention: one strongest checkpoint per bot; other snapshots stay local).

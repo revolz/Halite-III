@@ -36,7 +36,7 @@ RL_V4 = os.path.join(_MY_EXT, 'rl_v4')
 
 
 def _bot_cmd(folder: str, deterministic: bool) -> str:
-    model = os.path.join(folder, 'checkpoints', 'model_final_weights.pt')
+    model = os.path.join(folder, 'checkpoints', 'best.pt')
     det   = ' --deterministic' if deterministic else ''
     return f'python -u "{os.path.join(folder, "rl_bot.py")}" --model "{model}"{det}'
 

@@ -34,7 +34,7 @@ def v6_cmd(model, spawn, deterministic, independent=False):
 
 def opp_cmd(version):
     folder = os.path.join(_MY_EXT, version)
-    model = os.path.join(folder, 'checkpoints', 'model_final_weights.pt')
+    model = os.path.join(folder, 'checkpoints', 'best.pt')
     return f'python -u "{os.path.join(folder, "rl_bot.py")}" --model "{model}"'
 
 

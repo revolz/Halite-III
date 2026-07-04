@@ -59,7 +59,7 @@ class FrozenV5:
     def __init__(self, model_path: Optional[str] = None):
         rl_v5_dir = os.path.join(MY_EXT, 'rl_v5')
         if model_path is None:
-            model_path = os.path.join(rl_v5_dir, 'checkpoints', 'model_final_weights.pt')
+            model_path = os.path.join(rl_v5_dir, 'checkpoints', 'best.pt')
         v5_script = os.path.join(HERE, 'v5_opponent.py')
         self.cmd = (f'python -u "{v5_script}" --model "{model_path}" --deterministic')
 

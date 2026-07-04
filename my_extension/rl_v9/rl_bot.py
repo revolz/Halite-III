@@ -12,7 +12,7 @@ Each turn:
   5. Commit executed actions back into FleetMemory.
 
 Usage:
-    python rl_v9/rl_bot.py --model rl_v9/checkpoints/bc.pt --deterministic
+    python rl_v9/rl_bot.py --model rl_v9/checkpoints/best.pt --deterministic
 """
 
 import argparse
@@ -128,7 +128,7 @@ def main(model_path: str, device: str = 'cpu', deterministic: bool = False):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description='rl_v9 inference bot')
-    default_model = os.path.join(HERE, 'checkpoints', 'bc.pt')
+    default_model = os.path.join(HERE, 'checkpoints', 'best.pt')
     ap.add_argument('--model', default=default_model)
     ap.add_argument('--device', default='cpu')
     ap.add_argument('--deterministic', action='store_true')

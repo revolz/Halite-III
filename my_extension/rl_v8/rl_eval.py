@@ -11,7 +11,7 @@ is to become a better bot than the one it imitated. rl_v5/rl_v7 remain
 available for secondary benchmarking.
 
 Usage:
-    python rl_v8/rl_eval.py --model checkpoints/bc.pt --games 20            # vs V71 (default)
+    python rl_v8/rl_eval.py --model checkpoints/best.pt --games 20            # vs V71 (default)
     python rl_v8/rl_eval.py --model checkpoints/ppo_final.pt --games 50 --save-replays
     python rl_v8/rl_eval.py --model checkpoints/ppo_final.pt --opponent rl_v5   # single matchup
     python rl_v8/rl_eval.py --model checkpoints/ppo_final.pt --opponent all     # v71 + rl_v5 + rl_v7
@@ -116,7 +116,7 @@ def run_match(opponent_name, opponent_cmd, agent_cmd, args):
 
 def main():
     ap = argparse.ArgumentParser(description='Evaluate rl_v8 vs V71 (default), rl_v5, and/or rl_v7.')
-    default_model = os.path.join(HERE, 'checkpoints', 'bc.pt')
+    default_model = os.path.join(HERE, 'checkpoints', 'best.pt')
     ap.add_argument('--model', default=default_model)
     ap.add_argument('--device', default='cpu')
     ap.add_argument('--deterministic', action='store_true')

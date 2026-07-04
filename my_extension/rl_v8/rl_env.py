@@ -59,8 +59,8 @@ REWARD_SCALE = 0.01  # keeps value targets O(tens), not O(thousands)
 import math
 
 
-RL_V5_DEFAULT_MODEL = os.path.join(MY_EXT, 'rl_v5', 'checkpoints', 'model_final_weights.pt')
-RL_V7_DEFAULT_MODEL = os.path.join(MY_EXT, 'rl_v7', 'checkpoints', 'ppo_ep0050_strongest.pt')
+RL_V5_DEFAULT_MODEL = os.path.join(MY_EXT, 'rl_v5', 'checkpoints', 'best.pt')
+RL_V7_DEFAULT_MODEL = os.path.join(MY_EXT, 'rl_v7', 'checkpoints', 'best.pt')
 V71_SCRIPT = os.path.join(MY_EXT, 'Year 2019', 'MyBot - V71', 'MyBot.py')
 
 

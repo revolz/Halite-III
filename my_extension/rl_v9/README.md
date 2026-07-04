@@ -76,6 +76,21 @@ python rl_v9/rl_train.py --episodes 300 --device cuda
 python rl_v9/rl_eval.py --model rl_v9/checkpoints/best.pt --games 50 --save-replays
 ```
 
+## Verifying the result
+
+`checkpoints/best.pt` — the shipped champion (episode-160 PPO policy), the
+model behind every number in the final verdict below — is committed, per the
+repo-wide convention of one published `best.pt` per bot. Reproduce the
+verdict from `my_extension/` (samples under 50 games are coin flips — see
+"Small samples lie"):
+
+```powershell
+python rl_v9/rl_eval.py --model rl_v9/checkpoints/best.pt --games 50
+```
+
+All other checkpoints (`bc.pt`, `ppo_ep*.pt`, `ppo_final.pt`) stay local;
+re-derive them with the pipeline above if needed.
+
 ## Results
 
 *(filled in as runs complete)*
@@ -213,8 +228,8 @@ regenerate with the command above).
 ### Head-to-head vs rl_v8 (2026-07-03): 75/100 = 75.0%
 
 Direct pitch of `rl_v9/checkpoints/best.pt` against rl_v8's strongest
-checkpoint `rl_v8/checkpoints/bc.pt` (rl_v8's PPO degraded its BC policy,
-so BC is its best). Both deterministic, via `run_game.py` on 32x32, seats
+checkpoint, its BC policy (rl_v8's PPO degraded it, so BC is its best; that
+file is now published as `rl_v8/checkpoints/best.pt`). Both deterministic, via `run_game.py` on 32x32, seats
 alternated each game, no replays kept.
 
 | Batch | Seeds | Games | rl_v9 wins | Win rate | Mean halite (rl_v9 / rl_v8) |

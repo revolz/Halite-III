@@ -55,7 +55,7 @@ class FrozenBotDriver:
         self.version = version
         vdir = os.path.join(_MY_EXT, version)
         if weights is None:
-            weights = os.path.join(vdir, 'checkpoints', 'model_final_weights.pt')
+            weights = os.path.join(vdir, 'checkpoints', 'best.pt')
         saved = {n: sys.modules.pop(n) for n in _ISOLATED if n in sys.modules}
         sys.path.insert(0, vdir)
         try:
