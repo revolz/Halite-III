@@ -13,8 +13,8 @@ Each turn:
 Reports the bot name as "rl_v7" so replays show "rl_v7" vs "rl_v5" correctly.
 
 Usage:
-    python rl_v7/rl_bot.py --model rl_v7/checkpoints/bc.pt
-    python rl_v7/rl_bot.py --model rl_v7/checkpoints/bc.pt --deterministic
+    python rl_v7/rl_bot.py --model rl_v7/checkpoints/best.pt
+    python rl_v7/rl_bot.py --model rl_v7/checkpoints/best.pt --deterministic
 """
 
 import argparse
@@ -110,7 +110,7 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description='rl_v7 inference bot')
-    default_model = os.path.join(HERE, 'checkpoints', 'bc.pt')
+    default_model = os.path.join(HERE, 'checkpoints', 'best.pt')
     ap.add_argument('--model', default=default_model)
     ap.add_argument('--device', default='cpu')
     ap.add_argument('--deterministic', action='store_true')

@@ -7,9 +7,11 @@ __pycache__/
 # Bot subprocess logs
 bot-*.log
 
-# Training artifacts
+# Training artifacts — each bot publishes its single strongest checkpoint
+# as checkpoints/best.pt; everything else stays local
 checkpoints_*/
 **/checkpoints/*.pt
+!**/checkpoints/best.pt
 dataset/
 dataset_*/
 replays_*/

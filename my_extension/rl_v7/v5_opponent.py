@@ -46,7 +46,7 @@ import rl_bot as v5_bot  # noqa: E402
 
 def main():
     parser = argparse.ArgumentParser(description='rl_v5 opponent (named correctly)')
-    default_model = os.path.join(RL_V5_DIR, 'checkpoints', 'model_final_weights.pt')
+    default_model = os.path.join(RL_V5_DIR, 'checkpoints', 'best.pt')
     parser.add_argument('--model', default=default_model)
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--deterministic', action='store_true')

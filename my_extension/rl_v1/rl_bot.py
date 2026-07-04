@@ -29,10 +29,10 @@ Each turn the bot:
 Usage
 -----
     # Run via the engine or run_game.py:
-    python rl_bot.py --model checkpoints_v9/model_final_weights.pt
+    python rl_bot.py --model checkpoints_v9/best.pt
 
     # Register with run_game.py (from repo root):
-    python my_extension/run_game.py --bot "python my_extension/rl_v1/rl_bot.py --model my_extension/rl_v1/checkpoints_v9/model_final_weights.pt"
+    python my_extension/run_game.py --bot "python my_extension/rl_v1/rl_bot.py --model my_extension/rl_v1/checkpoints_v9/best.pt"
 """
 
 import argparse

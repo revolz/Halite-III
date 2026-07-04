@@ -87,7 +87,7 @@ def run_match(opponent_name, opponent_cmd, agent_cmd, args):
 
 def main():
     ap = argparse.ArgumentParser(description='Evaluate rl_v9 (default vs V71).')
-    default_model = os.path.join(HERE, 'checkpoints', 'bc.pt')
+    default_model = os.path.join(HERE, 'checkpoints', 'best.pt')
     ap.add_argument('--model', default=default_model)
     ap.add_argument('--device', default='cpu')
     ap.add_argument('--stochastic', action='store_true',

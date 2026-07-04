@@ -7,18 +7,18 @@ reports win rate, mean final halite, mean halite-per-turn, and a per-game table.
 Usage
 -----
     # Evaluate a weights file against the default greedy opponent
-    python rl_eval.py --model checkpoints_v9\model_final_weights.pt --games 20
+    python rl_eval.py --model checkpoints_v9\best.pt --games 20
 
     # Compare two checkpoints
     python rl_eval.py --model checkpoints_v9\model_ep500_weights.pt --games 20
     python rl_eval.py --model checkpoints_v9\model_ep1000_weights.pt --games 20
 
     # Use deterministic (greedy) actions instead of sampling
-    python rl_eval.py --model checkpoints_v9\model_final_weights.pt --games 20 --deterministic
+    python rl_eval.py --model checkpoints_v9\best.pt --games 20 --deterministic
 
     # Change opponent
-    python rl_eval.py --model checkpoints_v9\model_final_weights.pt --games 20 --opponent greedy
-    python rl_eval.py --model checkpoints_v9\model_final_weights.pt --games 20 --opponent idle
+    python rl_eval.py --model checkpoints_v9\best.pt --games 20 --opponent greedy
+    python rl_eval.py --model checkpoints_v9\best.pt --games 20 --opponent idle
 """
 
 import argparse

@@ -72,12 +72,12 @@ non-zero as the net learns to build dropoffs — the one behaviour the FSM never
 ## Evaluate & replay
 ```bash
 # Head-to-head vs the champ (each bot uses its own features, via the engine)
-PYTHONIOENCODING=utf-8 python rl_eval.py --model checkpoints/model_final_weights.pt --opponent rl_v4 --games 50 --deterministic
+PYTHONIOENCODING=utf-8 python rl_eval.py --model checkpoints/best.pt --opponent rl_v4 --games 50 --deterministic
 
 # Replay vs rl_v4 — run from my_extension/ ; writes .hlt to replays/
 python run_game.py --replay --width 32 --height 32 \
-  --bot "python -u rl_v5/rl_bot.py --model rl_v5/checkpoints/model_final_weights.pt --deterministic" \
-  --bot "python -u rl_v4/rl_bot.py --model rl_v4/checkpoints/model_final_weights.pt"
+  --bot "python -u rl_v5/rl_bot.py --model rl_v5/checkpoints/best.pt --deterministic" \
+  --bot "python -u rl_v4/rl_bot.py --model rl_v4/checkpoints/best.pt"
 ```
 Benchmark with `--deterministic` to see clean FSM behaviour. Note: every game (training,
 eval, head-to-head, replays) runs on the Python `halite_engine.py` — there is no C++

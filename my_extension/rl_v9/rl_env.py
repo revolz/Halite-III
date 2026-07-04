@@ -55,7 +55,7 @@ from features import FleetMemory                    # noqa: E402
 from resolver import resolve                        # noqa: E402
 
 V71_SCRIPT = os.path.join(MY_EXT, 'Year 2019', 'MyBot - V71', 'MyBot.py')
-RL_V5_DEFAULT_MODEL = os.path.join(MY_EXT, 'rl_v5', 'checkpoints', 'model_final_weights.pt')
+RL_V5_DEFAULT_MODEL = os.path.join(MY_EXT, 'rl_v5', 'checkpoints', 'best.pt')
 
 
 def opponent_cmd_for(name: str, model_path: Optional[str] = None) -> str:
@@ -66,7 +66,7 @@ def opponent_cmd_for(name: str, model_path: Optional[str] = None) -> str:
         script = os.path.join(MY_EXT, 'rl_v5', 'rl_bot.py')
         return f'python -u "{script}" --model "{mp}" --deterministic'
     elif name == 'rl_v8':
-        mp = model_path or os.path.join(MY_EXT, 'rl_v8', 'checkpoints', 'bc.pt')
+        mp = model_path or os.path.join(MY_EXT, 'rl_v8', 'checkpoints', 'best.pt')
         script = os.path.join(MY_EXT, 'rl_v8', 'rl_bot.py')
         return f'python -u "{script}" --model "{mp}" --deterministic'
     else:

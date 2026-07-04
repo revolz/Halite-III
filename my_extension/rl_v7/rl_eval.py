@@ -7,7 +7,7 @@ reports win rate, mean deposited halite, and verifies the replay bot-name
 entries read "rl_v7" and "rl_v5".
 
 Usage:
-    python rl_v7/rl_eval.py --model checkpoints/bc.pt --games 20
+    python rl_v7/rl_eval.py --model checkpoints/best.pt --games 20
     python rl_v7/rl_eval.py --model checkpoints/ppo_final.pt --games 50
 """
 
@@ -45,7 +45,7 @@ def parse_replay_names(path):
 
 def main():
     ap = argparse.ArgumentParser(description='Evaluate rl_v7 vs rl_v5.')
-    default_model = os.path.join(HERE, 'checkpoints', 'bc.pt')
+    default_model = os.path.join(HERE, 'checkpoints', 'best.pt')
     ap.add_argument('--model', default=default_model)
     ap.add_argument('--device', default='cpu')
     ap.add_argument('--deterministic', action='store_true')

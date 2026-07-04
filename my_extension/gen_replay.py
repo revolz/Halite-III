@@ -11,7 +11,7 @@ Usage:
     python gen_replay.py --seed 42 --output replays/my_game.hlt
 
     # rl_v3 vs greedy (after training):
-    python gen_replay.py --model rl_v3/checkpoints/model_final_weights.pt --output replays/rl_v3_game.hlt
+    python gen_replay.py --model rl_v3/checkpoints/best.pt --output replays/rl_v3_game.hlt
 """
 
 import argparse

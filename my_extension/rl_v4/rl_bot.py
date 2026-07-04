@@ -29,10 +29,10 @@ Each turn the bot:
 Usage
 -----
     # Run via the engine or run_game.py:
-    python rl_bot.py --model checkpoints_v9/model_final_weights.pt
+    python rl_bot.py --model checkpoints_v9/best.pt
 
     # Register with run_game.py (from repo root):
-    python my_extension/run_game.py --bot "python my_extension/rl_v1/rl_bot.py --model my_extension/rl_v1/checkpoints_v9/model_final_weights.pt"
+    python my_extension/run_game.py --bot "python my_extension/rl_v1/rl_bot.py --model my_extension/rl_v1/checkpoints_v9/best.pt"
 """
 
 import argparse
@@ -670,7 +670,7 @@ def main(model_path: str, device_str: str = 'cpu', deterministic: bool = False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Halite III RL bot')
-    _default_model = os.path.join(_HERE, 'checkpoints', 'model_final_weights.pt')
+    _default_model = os.path.join(_HERE, 'checkpoints', 'best.pt')
     parser.add_argument('--model',         default=_default_model, help='path to model .pt file')
     parser.add_argument('--device',        default='cpu',        help='torch device (cpu or cuda)')
     parser.add_argument('--deterministic', action='store_true',  help='greedy action selection')

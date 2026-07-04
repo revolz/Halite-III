@@ -11,6 +11,13 @@ Each `rl_v*/` folder is a frozen, self-contained bot (own features, model,
 training scripts); later bots benchmark against earlier ones. Detailed docs
 live in each folder's README; this file is the high-level lineage.
 
+**Published checkpoints:** every bot ships exactly one weight file,
+`checkpoints/best.pt` — its strongest checkpoint (for rl_v9, the model behind
+the 57.3%-vs-V71 verdict). All other training artifacts (intermediate
+snapshots, BC checkpoints, full-pickle saves) are gitignored and reproducible
+via each bot's documented pipeline. Exception: rl_v6 publishes no weights —
+it was abandoned with no result to verify.
+
 ## Version lineage: objective → outcome
 
 *Terms: **BC** = behavioral cloning (train a network to imitate a bot from

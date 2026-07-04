@@ -41,7 +41,7 @@ import config                                    # noqa: E402
 
 V71_BOT = 'python -u "' + os.path.join(MY_EXT, 'Year 2019', 'MyBot - V71', 'MyBot.py') + '"'
 GREEDY_BOT = f'python -u "{os.path.join(REPO_ROOT, "starter_kits", "Python3", "MyBot.py")}"'
-RL_V5_MODEL_DEFAULT = os.path.join(MY_EXT, 'rl_v5', 'checkpoints', 'model_final_weights.pt')
+RL_V5_MODEL_DEFAULT = os.path.join(MY_EXT, 'rl_v5', 'checkpoints', 'best.pt')
 
 
 def run_batch(n_games, width, height, bots, tag, seed0):

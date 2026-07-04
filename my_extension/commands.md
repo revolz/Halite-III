@@ -59,7 +59,7 @@ python run_game.py --width 40 --height 40 --seed 42 --verbose --replay
 ```bash
 # rl_v2 bot vs the starter-kit bot (from my_extension/)
 python run_game.py \
-  --bot "python rl_v2/rl_bot.py --model rl_v2/checkpoints/model_final_weights.pt" \
+  --bot "python rl_v2/rl_bot.py --model rl_v2/checkpoints/best.pt" \
   --bot "python ..\starter_kits\Python3\MyBot.py" \
   --replay --verbose
 ```
@@ -127,7 +127,7 @@ python rl_train.py --episodes 2000 --checkpoint-dir checkpoints
 - Saves a checkpoint every 50 episodes: `checkpoints\model_ep50.pt`
 - Saves plain weights alongside: `checkpoints\model_ep50_weights.pt`
 - Writes a CSV log: `checkpoints\training_log.csv`
-- Saves final model when done: `checkpoints\model_final.pt` + `model_final_weights.pt`
+- Saves final model when done: `checkpoints\model_final.pt` + `best.pt`
 
 ### Resume training from a checkpoint
 
@@ -219,20 +219,20 @@ reports win rate, mean halite, and halite-per-turn.
 
 ```bash
 # 20 games vs the greedy bot (default)
-python rl_eval.py --model checkpoints\model_final_weights.pt --games 20
+python rl_eval.py --model checkpoints\best.pt --games 20
 
 # Compare two checkpoints (run separately and compare win rates)
 python rl_eval.py --model checkpoints\model_ep500_weights.pt  --games 20
 python rl_eval.py --model checkpoints\model_ep1000_weights.pt --games 20
 
 # Use deterministic (greedy) actions for a fair upper-bound estimate
-python rl_eval.py --model checkpoints\model_final_weights.pt --games 20 --deterministic
+python rl_eval.py --model checkpoints\best.pt --games 20 --deterministic
 
 # Against idle opponent (useful early in training when bot hasn't beaten greedy yet)
 python rl_eval.py --model checkpoints\model_ep100_weights.pt --games 20 --opponent idle
 
 # Reproducible evaluation (fixed seed)
-python rl_eval.py --model checkpoints\model_final_weights.pt --games 20 --seed 42
+python rl_eval.py --model checkpoints\best.pt --games 20 --seed 42
 ```
 
 ### rl_eval.py options
@@ -291,7 +291,7 @@ Run from `my_extension/`:
 
 ```bash
 python run_game.py \
-  --bot "python rl_v2/rl_bot.py --model rl_v2/checkpoints/model_final_weights.pt" \
+  --bot "python rl_v2/rl_bot.py --model rl_v2/checkpoints/best.pt" \
   --bot "python ..\starter_kits\Python3\MyBot.py" \
   --replay --verbose
 ```
@@ -300,7 +300,7 @@ python run_game.py \
 
 ```bash
 python run_game.py \
-  --bot "python rl_v2/rl_bot.py --model rl_v2/checkpoints/model_final_weights.pt --deterministic" \
+  --bot "python rl_v2/rl_bot.py --model rl_v2/checkpoints/best.pt --deterministic" \
   --bot "python ..\starter_kits\Python3\MyBot.py"
 ```
 
@@ -339,7 +339,7 @@ python run_game.py \
    python rl_train.py --resume checkpoints\model_ep2000.pt --episodes 1000 --checkpoint-dir checkpoints
 
 8. Run your trained bot vs the starter-kit bot (from my_extension/):
-   python run_game.py --bot "python rl_v2/rl_bot.py --model rl_v2/checkpoints/model_final_weights.pt" --bot "python ..\starter_kits\Python3\MyBot.py" --replay
+   python run_game.py --bot "python rl_v2/rl_bot.py --model rl_v2/checkpoints/best.pt" --bot "python ..\starter_kits\Python3\MyBot.py" --replay
 ```
 
 ### How to read the training log
