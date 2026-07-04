@@ -103,6 +103,63 @@ That line — hand-designed inputs, learned policy — is the compromise that
 finally worked after v6's purist attempt and v7/v8's stateless attempts both
 failed.
 
+## Independent verification: full 9-bot round robin (2026-07-04)
+
+To sanity-check the repo end-to-end on a fresh clone, all runnable bots
+(`rl_v1`–`rl_v5`, `rl_v7`–`rl_v9`, and `V71`) were pitted against each other
+in a round robin: every pair played 10 games (seeds 1–10, deterministic
+policies, 32×32 map, `run_game.py` / `halite_engine.py`) — 36 pairings × 10
+games = **360 games total, 0 crashes/errors**. `rl_v6` was excluded: its
+`checkpoints/` folder ships no `best.pt`, matching its documented
+"abandoned, no result to verify" status above.
+
+### Final standings
+
+| Rank | Bot | Objective | Record (W-L-T) | Win % | Avg Halite | Avg Opp Halite |
+|---|---|---|---|---|---|---|
+| 1 | **rl_v9** | Beat V71, everything learned | 72-8-0 | 90.0% | 28,253 | 6,087 |
+| 2 | **V71 (2019)** | Hand-coded 2019 benchmark bot | 70-10-0 | 87.5% | 22,495 | 5,707 |
+| 3 | **rl_v8** | Beat rl_v5/rl_v7 by imitating V71 | 60-19-1 | 75.0% | 16,951 | 9,537 |
+| 4 | **rl_v5** | Beat rl_v4 (FSM hybrid) | 54-25-1 | 67.5% | 12,430 | 11,072 |
+| 5 | **rl_v4** | Beat rl_v3, learned dropoffs | 36-44-0 | 45.0% | 3,252 | 11,926 |
+| 6 | **rl_v7** | Beat rl_v5 via BC + PPO | 31-48-1 | 38.8% | 4,211 | 11,670 |
+| 7 | **rl_v3** | From-scratch PPO, macro-actions | 24-56-0 | 30.0% | 1,640 | 12,857 |
+| 8 | **rl_v2** | Early from-scratch RL experiment | 8-70-2 | 10.0% | 384 | 13,912 |
+| 9 | **rl_v1** | Early from-scratch RL experiment | 0-75-5 | 0.0% | 193 | 7,041 |
+
+This independently corroborates the version-lineage table above: rl_v9 is
+the strongest bot in the repo and the only one to out-rank V71 overall, the
+FSM-hybrid/imitation bots (rl_v8, rl_v5) form the next tier, and the earlier
+from-scratch/stateless experiments (rl_v1–v4, v7) trail behind in roughly
+their documented order.
+
+### Head-to-head cross table
+
+Row bot's record vs column bot, out of 10 games each:
+
+| Bot | rl_v9 | V71 | rl_v8 | rl_v5 | rl_v4 | rl_v7 | rl_v3 | rl_v2 | rl_v1 |
+|---|---|---|---|---|---|---|---|---|---|
+| **rl_v9** | — | 8-2 | 7-3 | 7-3 | 10-0 | 10-0 | 10-0 | 10-0 | 10-0 |
+| **V71** | 2-8 | — | 9-1 | 10-0 | 10-0 | 10-0 | 9-1 | 10-0 | 10-0 |
+| **rl_v8** | 3-7 | 1-9 | — | 7-3 | 10-0 | 10-0 | 10-0 | 10-0 | 9-1 |
+| **rl_v5** | 3-7 | 0-10 | 3-7 | — | 10-0 | 9-1 | 10-0 | 10-0 | 9-1 |
+| **rl_v4** | 0-10 | 0-10 | 0-10 | 0-10 | — | 7-3 | 9-1 | 10-0 | 10-0 |
+| **rl_v7** | 0-10 | 0-10 | 0-10 | 1-9 | 3-7 | — | 8-2 | 10-0 | 9-1 |
+| **rl_v3** | 0-10 | 1-9 | 0-10 | 0-10 | 1-9 | 2-8 | — | 10-0 | 10-0 |
+| **rl_v2** | 0-10 | 0-10 | 0-10 | 0-10 | 0-10 | 0-10 | 0-10 | — | 8-2 |
+| **rl_v1** | 0-10 | 0-10 | 0-10 | 0-10 | 0-10 | 0-10 | 0-10 | 0-10 | — |
+
+The table is almost perfectly transitive by rank — every bot beats everyone
+ranked below it and loses to everyone above it — except for the top: rl_v9
+takes the rl_v9-vs-V71 series 8-2 despite finishing only narrowly ahead of
+V71 in overall win rate, and rl_v7 (rank 6) still loses the majority of its
+games against rl_v4 (rank 5, 3-7), consistent with rl_v7's own documented
+conclusion that it was tuned only to beat rl_v5 and never specifically
+tested against rl_v4.
+
+Raw per-game data: `round_robin_results.csv`; full log: `round_robin_log.txt`;
+driver script: `round_robin.py` (all in this directory).
+
 ## Repo pointers
 
 * `rl_v9/README.md` — full design, the rl_v8 failure autopsy it fixes, run
