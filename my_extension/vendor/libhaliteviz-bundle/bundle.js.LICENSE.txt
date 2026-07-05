@@ -1,0 +1,23 @@
+/*
+object-assign
+(c) Sindre Sorhus
+@license MIT
+*/
+
+/*!
+ * @pixi/filter-kawase-blur - v2.7.0
+ * Compiled Sun, 13 Jan 2019 22:51:52 UTC
+ *
+ * @pixi/filter-kawase-blur is licensed under the MIT License.
+ * http://www.opensource.org/licenses/mit-license
+ */
+
+/*!
+ * @pixi/filter-shockwave - v2.7.0
+ * Compiled Sun, 13 Jan 2019 22:51:52 UTC
+ *
+ * @pixi/filter-shockwave is licensed under the MIT License.
+ * http://www.opensource.org/licenses/mit-license
+ */
+
+/*! https://mths.be/punycode v1.4.1 by @mathias */
