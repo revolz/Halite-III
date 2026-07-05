@@ -119,7 +119,7 @@
     function fail(msg){ errEl.textContent = 'Error: ' + msg; console.error(msg); }
 
     // ---- load the prebuilt baseline bundle (cache-busted) ----
-    const BUNDLE = '../libhaliteviz/dist/bundle.js?v=' + Date.now();
+    const BUNDLE = 'vendor/libhaliteviz-bundle/bundle.js?v=' + Date.now();
     const BUNDLE_URL = new URL(BUNDLE, location.href).href;
     let lastScriptError = null;
     window.addEventListener('error', (ev) => {
