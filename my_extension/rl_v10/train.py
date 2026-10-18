@@ -431,6 +431,7 @@ def main():
     ap.add_argument('--out', default=os.path.join(HERE, 'checkpoints'))
     ap.add_argument('--resume', default=None)
     ap.add_argument('--seed', type=int, default=0)
+    ap.add_argument('--reset-spawn-head', action='store_true')
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
     os.makedirs(args.out, exist_ok=True)
@@ -442,9 +443,12 @@ def main():
         start_it = extra.get('iter', 0)
     else:
         net = Net(args.ch, args.blocks)
+    if args.reset_spawn_head:
+        torch.nn.init.zeros_(net.spawn[-1].weight)
+        torch.nn.init.zeros_(net.spawn[-1].bias)
     net = net.to(memory_format=torch.channels_last)
     opt = torch.optim.Adam(net.parameters(), lr=args.lr)
-    if args.resume and os.path.exists(args.resume + '.opt'):
+    if args.resume and os.path.exists(args.resume + '.opt') and not args.reset_spawn_head:
         opt.load_state_dict(torch.load(args.resume + '.opt'))
     league = League(args.out)
     logf = open(os.path.join(args.out, 'train_log.jsonl'), 'a')
