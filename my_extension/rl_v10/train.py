@@ -8,8 +8,10 @@ sampled from the network.  The only constraints are the game's legality rules
 afford, can't spawn below 1000 halite).
 
 Rewards (units of 1000 halite):
-  ship   potential-shaped banked halite: r = dep + gamma*a*cargo' - a*cargo
-         (a = --alpha); cargo lost to a wreck or to the game ending costs a*cargo.
+  ship   potential-shaped banked halite: r = dep + gamma*Phi' - Phi with
+         Phi = cargo * (phi_far + phi_near * max(0, 1 - dist_home/phi_radius));
+         over a ship's life the shaping telescopes away, so the total is exactly
+         the halite it banked.  Cargo lost to a wreck or the game end costs Phi.
          Wrecks also credit destroyed enemy cargo (a*cargo) and enemy hulls.
          Building a dropoff earns its bank delta plus --lam-drop x halite
          later deposited there.  Ships alive at the end share the game outcome
@@ -34,7 +36,7 @@ import torch.nn.functional as F
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from sim import BatchSim, MAX_IDS  # noqa: E402
-from obs import encode, mirror_flags, uncanon_actions, N_ACT  # noqa: E402
+from obs import encode, mirror_flags, uncanon_actions, N_ACT, _dist_maps  # noqa: E402
 from model import Net, save, load  # noqa: E402
 
 NEG = -1e9
@@ -78,6 +80,11 @@ class League:
         return self.cache[path]
 
 
+def phi_coef(dist, args):
+    """Potential per unit cargo: grows as the ship nears one of its own structures."""
+    return args.phi_far + args.phi_near * np.maximum(0.0, 1.0 - dist / args.phi_radius)
+
+
 def rollout(net, league, args, rng):
     B, H, W = args.envs, 32, 32
     sim = BatchSim(B, W, H)
@@ -112,7 +119,7 @@ def rollout(net, league, args, rng):
     gamma, alpha = args.gamma, args.alpha
     # storage
     S_obs, S_fy, S_fx = [], [], []
-    sh = {k: [] for k in ('obs', 'cell', 'act', 'logp', 'val', 'mask', 'rew', 'done', 'b', 'p', 'sid', 'turn', 'cargo_b')}
+    sh = {k: [] for k in ('obs', 'cell', 'act', 'logp', 'val', 'mask', 'rew', 'done', 'b', 'p', 'sid', 'turn', 'cargo_b', 'phi_b')}
     sp = {k: [] for k in ('obs', 'act', 'logp', 'val', 'b', 'p', 'sid')}
     last = np.full((B, 2, MAX_IDS), -1, np.int64)
     next_idx = []
@@ -130,6 +137,7 @@ def rollout(net, league, args, rng):
         act_grid = np.zeros((B, 2, H, W), np.int64)
         spawn = np.zeros((B, 2), bool)
         live = ~sim.done
+        kmap = [phi_coef(_dist_maps(sim.owner, 0), args), phi_coef(_dist_maps(sim.owner, 1), args)]
         # group seats by controller
         groups = {}
         for b in range(B):
@@ -182,6 +190,7 @@ def rollout(net, league, args, rng):
                     sh['sid'].append(sids)
                     sh['turn'].append(np.full(k, turn))
                     sh['cargo_b'].append(sim.cargo[b, p, ys, ex])
+                    sh['phi_b'].append(sim.cargo[b, p, ys, ex] * kmap[p][b, ys, ex])
                     sh['p'].append(np.full(k, p))
                 if spok[b, p] and args.it > args.spawn_warmup:
                     sp['obs'].append(oi)
@@ -207,6 +216,11 @@ def rollout(net, league, args, rng):
         cargo_after = np.full((B, MAX_IDS), -1, np.int64)
         bb, pp, yy, xx = np.nonzero(sim.occ)
         cargo_after[bb, sim.sid[bb, pp, yy, xx]] = sim.cargo[bb, pp, yy, xx]
+        kmap2 = [phi_coef(_dist_maps(sim.owner, 0), args), phi_coef(_dist_maps(sim.owner, 1), args)]
+        k_after = np.zeros((B, MAX_IDS))
+        for p_ in (0, 1):
+            sel = pp == p_
+            k_after[bb[sel], sim.sid[bb[sel], p_, yy[sel], xx[sel]]] = kmap2[p_][bb[sel], yy[sel], xx[sel]]
         if len(sh['act']) and sh['turn'][-1][0] == turn:
             # samples of this turn are the trailing arrays with turn == turn
             j = len(sh['turn']) - 1
@@ -216,7 +230,7 @@ def rollout(net, league, args, rng):
             for q in range(j + 1, len(sh['turn'])):
                 b = sh['b'][q]
                 s = sh['sid'][q]
-                cb = sh['cargo_b'][q].astype(np.float64)
+                cb = sh['phi_b'][q].astype(np.float64)
                 bi = b[0]
                 dep = ev['dep'][bi, s].astype(np.float64)
                 dead = ev['dead'][bi, s]
@@ -226,16 +240,16 @@ def rollout(net, league, args, rng):
                 r = np.zeros(len(s))
                 done = np.zeros(len(s), bool)
                 # construct
-                r = np.where(cons, ev['construct_delta'][bi, s] - alpha * cb, r)
+                r = np.where(cons, ev['construct_delta'][bi, s] - cb, r)
                 # wreck
                 kv = alpha * ev['kill_cargo'][bi, s] + hull * ev['kill_hulls'][bi, s]
-                r = np.where(dead & ~cons, dep + kv - alpha * cb, r)
+                r = np.where(dead & ~cons, dep + kv - cb, r)
                 alive = (ca >= 0) & ~dead & ~cons
                 if over:
-                    r = np.where(alive, dep - alpha * cb, r)
+                    r = np.where(alive, dep - cb, r)
                     done[:] = True
                 else:
-                    r = np.where(alive, dep + gamma * alpha * ca - alpha * cb, r)
+                    r = np.where(alive, dep + gamma * ca * k_after[bi, s] - cb, r)
                     done = dead | cons
                 sh['rew'].append(r / 1000.0)
                 sh['done'].append(done)
@@ -397,7 +411,10 @@ def main():
     ap.add_argument('--clip', type=float, default=0.2)
     ap.add_argument('--ent', type=float, default=0.01)
     ap.add_argument('--vf', type=float, default=0.5)
-    ap.add_argument('--alpha', type=float, default=0.5)
+    ap.add_argument('--alpha', type=float, default=0.5, help='value of destroyed enemy cargo')
+    ap.add_argument('--phi-far', type=float, default=0.25)
+    ap.add_argument('--phi-near', type=float, default=0.65)
+    ap.add_argument('--phi-radius', type=float, default=16.0)
     ap.add_argument('--w-win', type=float, default=1.0)
     ap.add_argument('--lam-drop', type=float, default=0.25)
     ap.add_argument('--p-self', type=float, default=0.5)
