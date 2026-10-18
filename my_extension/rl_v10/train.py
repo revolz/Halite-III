@@ -82,7 +82,12 @@ def rollout(net, league, args, rng):
     B, H, W = args.envs, 32, 32
     sim = BatchSim(B, W, H)
     seeds = [int(rng.integers(0, 2**31)) for _ in range(B)]
-    sim.reset(seeds)
+    init_bank = None
+    if args.it <= args.curr_iters:
+        frac = 1.0 - (args.it - 1) / args.curr_iters
+        hi = 5000 + frac * (args.curr_max_bank - 5000)
+        init_bank = np.where(rng.random(B) < 0.5, 5000, rng.uniform(5000, hi, B)).astype(np.int64)
+    sim.reset(seeds, init_bank)
     mirror = mirror_flags(sim.fac, W)
     fcell = np.zeros((B, 2, 2), np.int64)                  # canonical (y,x) of each seat's yard
     for b in range(B):
@@ -269,6 +274,8 @@ def rollout(net, league, args, rng):
         for p in (0, 1):
             if learner[b, p]:
                 learner_scores.append((final[b, p], final[b, 1 - p], ctrl[b][1 - p]))
+    stats['deposited'] = float(np.mean([sim.deposited[b, p] for b in range(B) for p in (0, 1) if learner[b, p]]))
+    stats['ships_per_seat'] = float(stats['spawns'] / (2 * B))
     data = {
         'obs': np.stack(S_obs), 'fy': np.array(S_fy), 'fx': np.array(S_fx),
         'sh_obs': cat('obs', np.int64), 'sh_cell': cat('cell', np.int64),
@@ -399,7 +406,9 @@ def main():
     ap.add_argument('--snap-every', type=int, default=10)
     ap.add_argument('--spawn-warmup', type=int, default=40,
                     help='training-time exploration: first N iters spawn at a fixed rate, spawn head untrained')
-    ap.add_argument('--spawn-explore', type=float, default=0.2)
+    ap.add_argument('--spawn-explore', type=float, default=0.3)
+    ap.add_argument('--curr-iters', type=int, default=150, help='curriculum: larger random starting banks, annealed to 5000')
+    ap.add_argument('--curr-max-bank', type=int, default=30000)
     ap.add_argument('--threads', type=int, default=4)
     ap.add_argument('--out', default=os.path.join(HERE, 'checkpoints'))
     ap.add_argument('--resume', default=None)
@@ -442,7 +451,7 @@ def main():
         }
         logf.write(json.dumps(rec) + '\n')
         logf.flush()
-        print(f"it {it} bank {rec['mean_bank']:.0f} win_snap {rec['win_snap']} spawns {stats['spawns']} "
+        print(f"it {it} dep {stats['deposited']:.0f} bank {rec['mean_bank']:.0f} win_snap {rec['win_snap']} spawns {stats['spawns']} "
               f"drops {stats['drops']} kills {stats['kills']} ent {info.get('ent', 0):.3f} kl {info.get('kl', 0):.4f} "
               f"vl {info.get('vl', 0):.3f} sp_rate {rec['spawn_rate']:.2f} t {rec['t_roll']}+{rec['t_upd']}s", flush=True)
         latest = os.path.join(args.out, 'latest.pt')

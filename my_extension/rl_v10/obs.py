@@ -100,7 +100,9 @@ def encode(halite, owner, occ, cargo, bank, turn, initial_halite, fac, mirror, s
             m[:, a] = mine & ~cant_move
         build_cost = np.maximum(0, 4000 - halite - cargo[:, p])
         m[:, 5] = mine & (owner < 0) & (build_cost <= bank[:, p][:, None, None])
-        sp = bank[:, p] >= 1000
+        # spawning onto our own ship destroys both ships for nothing: masked as dominated
+        own_on_yard = occ[np.arange(B), p, fac[:, p, 1], fac[:, p, 0]]
+        sp = (bank[:, p] >= 1000) & ~own_on_yard
         fl = mirror[:, p]
         if fl.any():
             o[fl] = o[fl][..., ::-1]

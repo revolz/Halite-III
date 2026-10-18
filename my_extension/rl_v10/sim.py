@@ -51,7 +51,7 @@ class BatchSim:
         self.B, self.W, self.H = B, W, H
 
     # ------------------------------------------------------------------
-    def reset(self, seeds):
+    def reset(self, seeds, init_bank=None):
         B, H, W = self.B, self.H, self.W
         assert len(seeds) == B
         self.halite = np.zeros((B, H, W), np.int64)
@@ -70,6 +70,8 @@ class BatchSim:
         self.cargo = np.zeros((B, 2, H, W), np.int64)
         self.sid = np.full((B, 2, H, W), -1, np.int64)
         self.bank = np.full((B, 2), INITIAL_ENERGY, np.int64)
+        if init_bank is not None:
+            self.bank[:] = np.asarray(init_bank, np.int64)[:, None]
         self.next_id = np.zeros(B, np.int64)
         self.turn = 1
         self.done = np.zeros(B, bool)
