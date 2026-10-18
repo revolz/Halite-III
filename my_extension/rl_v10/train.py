@@ -141,6 +141,8 @@ def rollout(net, league, args, rng):
             fx = fcell[bs, ps, 1]
             model = net if key == 'L' else league.get(key)
             a, lp, v, sa, slp, sv = policy_step(model, o, mk, fy, fx)
+            if key == 'L' and args.it <= args.spawn_warmup:
+                sa = (rng.random(len(seats)) < args.spawn_explore).astype(np.int64)
             for i, (b, p) in enumerate(seats):
                 canon_occ = mk[i, 0]
                 spawn[b, p] = bool(sa[i] == 1) and bool(spok[b, p])
@@ -176,7 +178,7 @@ def rollout(net, league, args, rng):
                     sh['turn'].append(np.full(k, turn))
                     sh['cargo_b'].append(sim.cargo[b, p, ys, ex])
                     sh['p'].append(np.full(k, p))
-                if spok[b, p]:
+                if spok[b, p] and args.it > args.spawn_warmup:
                     sp['obs'].append(oi)
                     sp['act'].append(int(sa[i]))
                     sp['logp'].append(float(slp[i]))
@@ -237,15 +239,16 @@ def rollout(net, league, args, rng):
 
     # terminal: outcome bonus + dropoff payoff + spawn returns
     final = sim.bank.astype(np.float64)
-    rew = np.concatenate(sh['rew']) if sh['rew'] else np.zeros(0)
-    done = np.concatenate(sh['done'])
-    b_arr = np.concatenate(sh['b'])
-    p_arr = np.concatenate(sh['p'])
-    sid_arr = np.concatenate(sh['sid'])
-    act_arr = np.concatenate(sh['act'])
+    cat = lambda k, dt: np.concatenate(sh[k]) if sh[k] else np.zeros(0, dt)  # noqa: E731
+    rew = cat('rew', np.float64)
+    done = cat('done', bool)
+    b_arr = cat('b', np.int64)
+    p_arr = cat('p', np.int64)
+    sid_arr = cat('sid', np.int64)
+    act_arr = cat('act', np.int64)
     nxt = np.array(next_idx, np.int64)
     margin = final[b_arr, p_arr] - final[b_arr, 1 - p_arr]
-    end_turn = np.concatenate(sh['turn'])
+    end_turn = cat('turn', np.int64)
     # identify samples on the final turn of their env (ships alive at the end)
     env_last_turn = np.zeros(B, np.int64)
     for b in range(B):
@@ -268,9 +271,10 @@ def rollout(net, league, args, rng):
                 learner_scores.append((final[b, p], final[b, 1 - p], ctrl[b][1 - p]))
     data = {
         'obs': np.stack(S_obs), 'fy': np.array(S_fy), 'fx': np.array(S_fx),
-        'sh_obs': np.concatenate(sh['obs']), 'sh_cell': np.concatenate(sh['cell']),
-        'sh_act': act_arr, 'sh_logp': np.concatenate(sh['logp']),
-        'sh_val': np.concatenate(sh['val']), 'sh_mask': np.concatenate(sh['mask']),
+        'sh_obs': cat('obs', np.int64), 'sh_cell': cat('cell', np.int64),
+        'sh_act': act_arr, 'sh_logp': cat('logp', np.float32),
+        'sh_val': cat('val', np.float32),
+        'sh_mask': np.concatenate(sh['mask']) if sh['mask'] else np.zeros((0, 6), bool),
         'sh_rew': rew, 'sh_done': done, 'sh_next': nxt,
         'sp_obs': np.array(sp['obs'], np.int64), 'sp_act': np.array(sp['act'], np.int64),
         'sp_logp': np.array(sp['logp']), 'sp_val': np.array(sp['val']), 'sp_rew': sp_r,
@@ -300,7 +304,7 @@ def ppo_update(net, opt, data, args):
     starts = np.searchsorted(sh_obs[order], np.arange(n_obs))
     ends = np.searchsorted(sh_obs[order], np.arange(n_obs), side='right')
     sp_of_obs = {o: i for i, o in enumerate(data['sp_obs'])}
-    adv_n = (adv - adv.mean()) / (adv.std() + 1e-8)
+    adv_n = (adv - adv.mean()) / (adv.std() + 1e-8) if len(adv) else adv
     sp_adv = data['sp_rew'] - data['sp_val']
     sp_adv_n = (sp_adv - sp_adv.mean()) / (sp_adv.std() + 1e-8) if len(sp_adv) > 1 else sp_adv
     W = 32
@@ -367,8 +371,8 @@ def ppo_update(net, opt, data, args):
     out = {}
     for k in logs[0] if logs else []:
         out[k] = float(np.mean([d[k] for d in logs if k in d]))
-    out['adv_std'] = float(adv.std())
-    out['ret_mean'] = float(ret.mean())
+    out['adv_std'] = float(adv.std()) if len(adv) else 0.0
+    out['ret_mean'] = float(ret.mean()) if len(ret) else 0.0
     return out
 
 
@@ -393,6 +397,9 @@ def main():
     ap.add_argument('--max-grad', type=float, default=1.0)
     ap.add_argument('--target-kl', type=float, default=0.03)
     ap.add_argument('--snap-every', type=int, default=10)
+    ap.add_argument('--spawn-warmup', type=int, default=40,
+                    help='training-time exploration: first N iters spawn at a fixed rate, spawn head untrained')
+    ap.add_argument('--spawn-explore', type=float, default=0.2)
     ap.add_argument('--threads', type=int, default=4)
     ap.add_argument('--out', default=os.path.join(HERE, 'checkpoints'))
     ap.add_argument('--resume', default=None)
@@ -416,6 +423,7 @@ def main():
     logf = open(os.path.join(args.out, 'train_log.jsonl'), 'a')
     for it in range(start_it + 1, start_it + args.iters + 1):
         t0 = time.time()
+        args.it = it
         net.eval()
         data, scores, stats = rollout(net, league, args, rng)
         t1 = time.time()
