@@ -75,6 +75,8 @@ class BatchSim:
         self.next_id = np.zeros(B, np.int64)
         self.turn = 1
         self.done = np.zeros(B, bool)
+        self.drop_list = [[] for _ in range(B)]      # (dropoff id, owner, x, y) in creation order
+        self.next_drop_id = np.zeros(B, np.int64)
         self.deposited = np.zeros((B, 2), np.int64)
         self._update_insp()
 
@@ -119,6 +121,8 @@ class BatchSim:
                 s = sid[b, p, y, x]
                 owner[b, y, x] = p
                 self.struct_sid[b, y, x] = s
+                self.drop_list[b].append((int(self.next_drop_id[b]), p, int(x), int(y)))
+                self.next_drop_id[b] += 1
                 bank[b, p] += credit - cost
                 ev['constructed'][b, s] = True
                 ev['construct_delta'][b, s] = credit - cost

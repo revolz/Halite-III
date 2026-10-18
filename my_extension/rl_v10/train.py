@@ -38,6 +38,7 @@ sys.path.insert(0, HERE)
 from sim import BatchSim, MAX_IDS  # noqa: E402
 from obs import encode, mirror_flags, uncanon_actions, N_ACT, _dist_maps  # noqa: E402
 from model import Net, save, load  # noqa: E402
+from ext import ExtBot  # noqa: E402
 
 NEG = -1e9
 
@@ -105,7 +106,12 @@ def rollout(net, league, args, rng):
     pool = league.pool()
     ctrl = []
     for b in range(B):
-        if pool and rng.random() > args.p_self:
+        r_ext = rng.random()
+        if r_ext < args.p_v71:
+            opp = 'ext:v71'
+        elif r_ext < args.p_v71 + args.p_v9:
+            opp = 'ext:rl_v9'
+        elif pool and rng.random() > args.p_self:
             # bias towards recent snapshots
             k = len(pool)
             w = np.arange(1, k + 1, dtype=float) ** 1.0
@@ -115,6 +121,11 @@ def rollout(net, league, args, rng):
         c = ['L', opp] if rng.random() < 0.5 else [opp, 'L']
         ctrl.append(c)
     learner = np.array([[c == 'L' for c in cc] for cc in ctrl])
+    exts = {}
+    for b in range(B):
+        for p in (0, 1):
+            if ctrl[b][p].startswith('ext:'):
+                exts[(b, p)] = ExtBot(ctrl[b][p][4:], sim, b, p, seeds[b])
 
     gamma, alpha = args.gamma, args.alpha
     # storage
@@ -138,13 +149,17 @@ def rollout(net, league, args, rng):
         spawn = np.zeros((B, 2), bool)
         live = ~sim.done
         kmap = [phi_coef(_dist_maps(sim.owner, 0), args), phi_coef(_dist_maps(sim.owner, 1), args)]
+        for (b, p), eb in exts.items():
+            if live[b]:
+                eb.send_turn()
         # group seats by controller
         groups = {}
         for b in range(B):
             if not live[b]:
                 continue
             for p in (0, 1):
-                groups.setdefault(ctrl[b][p], []).append((b, p))
+                if not ctrl[b][p].startswith('ext:'):
+                    groups.setdefault(ctrl[b][p], []).append((b, p))
         for key, seats in groups.items():
             bs = np.array([s[0] for s in seats])
             ps = np.array([s[1] for s in seats])
@@ -200,6 +215,9 @@ def rollout(net, league, args, rng):
                     sp['b'].append(b)
                     sp['p'].append(p)
                     sp['sid'].append(-1)
+        for (b, p), eb in exts.items():
+            if live[b]:
+                act_grid[b, p], spawn[b, p] = eb.read_actions()
         ev = sim.step(act_grid, spawn)
         # bookkeeping for this turn's learner samples
         life_dep += ev['dep'] + alpha * ev['kill_cargo']
@@ -257,6 +275,8 @@ def rollout(net, league, args, rng):
         if sim.done.all():
             break
 
+    for eb in exts.values():
+        eb.close()
     # terminal: outcome bonus + dropoff payoff + spawn returns
     final = sim.bank.astype(np.float64)
     cat = lambda k, dt: np.concatenate(sh[k]) if sh[k] else np.zeros(0, dt)  # noqa: E731
@@ -419,6 +439,8 @@ def main():
     ap.add_argument('--w-win', type=float, default=1.0)
     ap.add_argument('--lam-drop', type=float, default=0.25)
     ap.add_argument('--p-self', type=float, default=0.5)
+    ap.add_argument('--p-v71', type=float, default=0.0, help='fraction of games vs the real V71 bot')
+    ap.add_argument('--p-v9', type=float, default=0.0, help='fraction of games vs the real rl_v9 bot')
     ap.add_argument('--max-grad', type=float, default=1.0)
     ap.add_argument('--target-kl', type=float, default=0.03)
     ap.add_argument('--snap-every', type=int, default=10)
@@ -463,17 +485,29 @@ def main():
         t2 = time.time()
         mine = np.array([s[0] for s in scores])
         theirs = np.array([s[1] for s in scores])
-        vs_snap = [s for s in scores if s[2] != 'L']
+        vs_snap = [s for s in scores if s[2] != 'L' and not s[2].startswith('ext:')]
+        vs_ext = {k: [s[0] > s[1] for s in scores if s[2] == 'ext:' + k] for k in ('v71', 'rl_v9')}
         rec = {
             'iter': it, 'games': args.envs, 'mean_bank': float(mine.mean()),
             'win_snap': float(np.mean([s[0] > s[1] for s in vs_snap])) if vs_snap else None,
-            'n_snap': len(vs_snap), 'obs': len(data['obs']), 'ship_samples': len(data['sh_act']),
+            'n_snap': len(vs_snap),
+            'win_v71': float(np.mean(vs_ext['v71'])) if vs_ext['v71'] else None, 'n_v71': len(vs_ext['v71']),
+            'win_v9': float(np.mean(vs_ext['rl_v9'])) if vs_ext['rl_v9'] else None, 'n_v9': len(vs_ext['rl_v9']),
+            'bank_v71': float(np.mean([s[0] for s in scores if s[2] == 'ext:v71'] or [0])),
+            'opp_v71': float(np.mean([s[1] for s in scores if s[2] == 'ext:v71'] or [0])),
+            'bank_v9': float(np.mean([s[0] for s in scores if s[2] == 'ext:rl_v9'] or [0])),
+            'opp_v9': float(np.mean([s[1] for s in scores if s[2] == 'ext:rl_v9'] or [0])), 'obs': len(data['obs']), 'ship_samples': len(data['sh_act']),
             'spawn_rate': float(data['sp_act'].mean()) if len(data['sp_act']) else 0.0,
             't_roll': round(t1 - t0, 1), 't_upd': round(t2 - t1, 1), **stats, **info,
         }
         logf.write(json.dumps(rec) + '\n')
         logf.flush()
-        print(f"it {it} dep {stats['deposited']:.0f} bank {rec['mean_bank']:.0f} win_snap {rec['win_snap']} spawns {stats['spawns']} "
+        ext_s = ''
+        if rec['n_v71']:
+            ext_s += f" v71 {rec['bank_v71']:.0f}:{rec['opp_v71']:.0f} w{rec['win_v71']:.2f}"
+        if rec['n_v9']:
+            ext_s += f" v9 {rec['bank_v9']:.0f}:{rec['opp_v9']:.0f} w{rec['win_v9']:.2f}"
+        print(f"it {it} dep {stats['deposited']:.0f} bank {rec['mean_bank']:.0f}{ext_s} win_snap {rec['win_snap']} spawns {stats['spawns']} "
               f"drops {stats['drops']} kills {stats['kills']} ent {info.get('ent', 0):.3f} kl {info.get('kl', 0):.4f} "
               f"vl {info.get('vl', 0):.3f} sp_rate {rec['spawn_rate']:.2f} t {rec['t_roll']}+{rec['t_upd']}s", flush=True)
         latest = os.path.join(args.out, 'latest.pt')
