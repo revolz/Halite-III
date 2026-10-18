@@ -436,7 +436,7 @@ def main():
     ap.add_argument('--phi-far', type=float, default=0.25)
     ap.add_argument('--phi-near', type=float, default=0.65)
     ap.add_argument('--phi-radius', type=float, default=16.0)
-    ap.add_argument('--w-win', type=float, default=1.0)
+    ap.add_argument('--w-win', type=float, default=0.0, help='outcome bonus for ships alive at the end (nonzero teaches losing ships to scuttle early)')
     ap.add_argument('--lam-drop', type=float, default=0.25)
     ap.add_argument('--p-self', type=float, default=0.5)
     ap.add_argument('--p-v71', type=float, default=0.0, help='fraction of games vs the real V71 bot')
