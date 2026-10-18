@@ -243,7 +243,8 @@ def rollout(net, league, args, rng):
                 r = np.where(cons, ev['construct_delta'][bi, s] - cb, r)
                 # wreck
                 kv = alpha * ev['kill_cargo'][bi, s] + hull * ev['kill_hulls'][bi, s]
-                r = np.where(dead & ~cons, dep + kv - cb, r)
+                own_hull = hull * dead                       # a lost hull is a real cost, mirroring the kill credit
+                r = np.where(dead & ~cons, dep + kv - cb - own_hull, r)
                 alive = (ca >= 0) & ~dead & ~cons
                 if over:
                     r = np.where(alive, dep - cb, r)
