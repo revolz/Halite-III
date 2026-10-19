@@ -29,6 +29,7 @@ def main():
     ap.add_argument('--greedy', action='store_true')
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--dump', default=None, help='debug: save per-turn observations (.npz)')
+    ap.add_argument('--name', default='rl_v10', help='name announced to the engine')
     args = ap.parse_args()
     torch.set_num_threads(1)
     if args.seed is not None:
@@ -54,7 +55,7 @@ def main():
     mirror = mirror_flags(fac, W)
     fy, fx = factory_cell(fac[0, me], W, mirror[0, me])
     dumped = []
-    sys.stdout.write('rl_v10\n')
+    sys.stdout.write(args.name + '\n')
     sys.stdout.flush()
 
     while True:

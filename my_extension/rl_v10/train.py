@@ -107,9 +107,11 @@ def rollout(net, league, args, rng):
     ctrl = []
     for b in range(B):
         r_ext = rng.random()
-        if r_ext < args.p_v71:
+        if args.fixed_opp and r_ext < args.p_fixed:
+            opp = args.fixed_opp
+        elif r_ext < args.p_fixed + args.p_v71:
             opp = 'ext:v71'
-        elif r_ext < args.p_v71 + args.p_v9:
+        elif r_ext < args.p_fixed + args.p_v71 + args.p_v9:
             opp = 'ext:rl_v9'
         elif pool and rng.random() > args.p_self:
             # bias towards recent snapshots
@@ -439,6 +441,8 @@ def main():
     ap.add_argument('--w-win', type=float, default=0.0, help='outcome bonus for ships alive at the end (nonzero teaches losing ships to scuttle early)')
     ap.add_argument('--lam-drop', type=float, default=0.25)
     ap.add_argument('--p-self', type=float, default=0.5)
+    ap.add_argument('--fixed-opp', default=None, help='checkpoint of a frozen opponent (e.g. rl_v10/checkpoints/best.pt)')
+    ap.add_argument('--p-fixed', type=float, default=0.0, help='fraction of games vs --fixed-opp')
     ap.add_argument('--p-v71', type=float, default=0.0, help='fraction of games vs the real V71 bot')
     ap.add_argument('--p-v9', type=float, default=0.0, help='fraction of games vs the real rl_v9 bot')
     ap.add_argument('--max-grad', type=float, default=1.0)
@@ -485,12 +489,15 @@ def main():
         t2 = time.time()
         mine = np.array([s[0] for s in scores])
         theirs = np.array([s[1] for s in scores])
-        vs_snap = [s for s in scores if s[2] != 'L' and not s[2].startswith('ext:')]
+        vs_snap = [s for s in scores if s[2] not in ('L', args.fixed_opp) and not s[2].startswith('ext:')]
+        vs_fixed = [s for s in scores if args.fixed_opp and s[2] == args.fixed_opp]
         vs_ext = {k: [s[0] > s[1] for s in scores if s[2] == 'ext:' + k] for k in ('v71', 'rl_v9')}
         rec = {
             'iter': it, 'games': args.envs, 'mean_bank': float(mine.mean()),
             'win_snap': float(np.mean([s[0] > s[1] for s in vs_snap])) if vs_snap else None,
             'n_snap': len(vs_snap),
+            'win_fixed': float(np.mean([s[0] > s[1] for s in vs_fixed])) if vs_fixed else None, 'n_fixed': len(vs_fixed),
+            'bank_fixed': float(np.mean([s[0] for s in vs_fixed] or [0])), 'opp_fixed': float(np.mean([s[1] for s in vs_fixed] or [0])),
             'win_v71': float(np.mean(vs_ext['v71'])) if vs_ext['v71'] else None, 'n_v71': len(vs_ext['v71']),
             'win_v9': float(np.mean(vs_ext['rl_v9'])) if vs_ext['rl_v9'] else None, 'n_v9': len(vs_ext['rl_v9']),
             'bank_v71': float(np.mean([s[0] for s in scores if s[2] == 'ext:v71'] or [0])),
@@ -503,6 +510,8 @@ def main():
         logf.write(json.dumps(rec) + '\n')
         logf.flush()
         ext_s = ''
+        if rec['n_fixed']:
+            ext_s += f" fixed {rec['bank_fixed']:.0f}:{rec['opp_fixed']:.0f} w{rec['win_fixed']:.2f}"
         if rec['n_v71']:
             ext_s += f" v71 {rec['bank_v71']:.0f}:{rec['opp_v71']:.0f} w{rec['win_v71']:.2f}"
         if rec['n_v9']:

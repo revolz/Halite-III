@@ -22,10 +22,11 @@ sys.path.insert(0, MY_EXT)
 PY = sys.executable
 
 
-def bot_cmd(name, model=None, greedy=False):
+def bot_cmd(name, model=None, greedy=False, label='rl_v10'):
     if name == 'rl_v10':
         g = ' --greedy' if greedy else ''
-        return f'"{PY}" -u "{HERE}/bot.py" --model "{model}"{g}'
+        model = model or f'{HERE}/checkpoints/best.pt'
+        return f'"{PY}" -u "{HERE}/bot.py" --model "{model}" --name {label}{g}'
     if name == 'v71':
         return f'"{PY}" -u "{MY_EXT}/Year 2019/MyBot - V71/MyBot.py"'
     if name == 'rl_v9':
@@ -63,7 +64,8 @@ def wilson(k, n, z=1.96):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--model', default=os.path.join(HERE, 'checkpoints', 'best.pt'))
-    ap.add_argument('--opponent', choices=['v71', 'rl_v9'], required=True)
+    ap.add_argument('--opponent', choices=['v71', 'rl_v9', 'rl_v10'], required=True)
+    ap.add_argument('--name', default='rl_v10', help='label of the evaluated bot (e.g. rl_v11)')
     ap.add_argument('--games', type=int, default=20)
     ap.add_argument('--seed0', type=int, default=500000)
     ap.add_argument('--workers', type=int, default=4)
@@ -75,7 +77,7 @@ def main():
     os.environ.setdefault('MKL_NUM_THREADS', '1')
     if args.replays:
         os.makedirs(args.replays, exist_ok=True)
-    c10 = bot_cmd('rl_v10', os.path.abspath(args.model), args.greedy)
+    c10 = bot_cmd('rl_v10', os.path.abspath(args.model), args.greedy, args.name)
     co = bot_cmd(args.opponent)
     jobs = [(args.seed0 + i // 2, i % 2, c10, co, args.replays) for i in range(args.games)]
     wins = n = 0
@@ -91,10 +93,10 @@ def main():
             tot10 += h10
             tot_o += ho
             rows.append((seed, seat, h10, ho, sec))
-            print(f'[{n}/{args.games}] seed {seed} seat {seat}: rl_v10 {h10:,} vs {args.opponent} {ho:,} '
+            print(f'[{n}/{args.games}] seed {seed} seat {seat}: {args.name} {h10:,} vs {args.opponent} {ho:,} '
                   f'-> {"WIN" if h10 > ho else "loss"}  ({sec}s)  running {wins}/{n}', flush=True)
     lo, hi = wilson(wins, n)
-    print(f'RESULT vs {args.opponent}: {wins}/{n} = {100 * wins / max(n, 1):.1f}%  '
+    print(f'RESULT {args.name} vs {args.opponent}: {wins}/{n} = {100 * wins / max(n, 1):.1f}%  '
           f'95% CI [{100 * lo:.1f}, {100 * hi:.1f}]  mean halite {tot10 / max(n, 1):,.0f} vs {tot_o / max(n, 1):,.0f}')
     if args.csv:
         new = not os.path.exists(args.csv)
