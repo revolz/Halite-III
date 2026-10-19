@@ -64,7 +64,10 @@ def wilson(k, n, z=1.96):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--model', default=os.path.join(HERE, 'checkpoints', 'best.pt'))
-    ap.add_argument('--opponent', choices=['v71', 'rl_v9', 'rl_v10'], required=True)
+    ap.add_argument('--opponent', required=True,
+                    help="v71, rl_v9, rl_v10, or a label for --opp-model (e.g. rl_v11_sampled)")
+    ap.add_argument('--opp-model', default=None, help='checkpoint for a network opponent other than rl_v10')
+    ap.add_argument('--opp-greedy', action='store_true')
     ap.add_argument('--name', default='rl_v10', help='label of the evaluated bot (e.g. rl_v11)')
     ap.add_argument('--games', type=int, default=20)
     ap.add_argument('--seed0', type=int, default=500000)
@@ -78,7 +81,10 @@ def main():
     if args.replays:
         os.makedirs(args.replays, exist_ok=True)
     c10 = bot_cmd('rl_v10', os.path.abspath(args.model), args.greedy, args.name)
-    co = bot_cmd(args.opponent)
+    if args.opp_model:
+        co = bot_cmd('rl_v10', os.path.abspath(args.opp_model), args.opp_greedy, args.opponent)
+    else:
+        co = bot_cmd(args.opponent)
     jobs = [(args.seed0 + i // 2, i % 2, c10, co, args.replays) for i in range(args.games)]
     wins = n = 0
     tot10 = tot_o = 0
