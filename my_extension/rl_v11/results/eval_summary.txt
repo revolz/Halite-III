@@ -1,0 +1,12 @@
+it 20 RESULT rl_v11 vs rl_v10: 20/24 = 83.3%  95% CI [64.1, 93.3]  mean halite 42,256 vs 32,567
+it 20 RESULT rl_v11 vs v71: 7/8 = 87.5%  95% CI [52.9, 97.8]  mean halite 43,270 vs 20,169
+it 20 RESULT rl_v11 vs rl_v9: 8/8 = 100.0%  95% CI [67.6, 100.0]  mean halite 43,190 vs 13,053
+it 40 RESULT rl_v11 vs rl_v10: 20/24 = 83.3%  95% CI [64.1, 93.3]  mean halite 42,326 vs 34,893
+it 40 RESULT rl_v11 vs v71: 8/8 = 100.0%  95% CI [67.6, 100.0]  mean halite 51,254 vs 27,422
+it 40 RESULT rl_v11 vs rl_v9: 8/8 = 100.0%  95% CI [67.6, 100.0]  mean halite 45,035 vs 7,756
+it 60 RESULT rl_v11 vs rl_v10: 23/24 = 95.8%  95% CI [79.8, 99.3]  mean halite 41,283 vs 29,644
+it 60 RESULT rl_v11 vs v71: 7/8 = 87.5%  95% CI [52.9, 97.8]  mean halite 42,773 vs 25,682
+it 60 RESULT rl_v11 vs rl_v9: 8/8 = 100.0%  95% CI [67.6, 100.0]  mean halite 47,240 vs 16,796
+it 80 RESULT rl_v11 vs rl_v10: 23/24 = 95.8%  95% CI [79.8, 99.3]  mean halite 38,162 vs 25,470
+it 80 RESULT rl_v11 vs v71: 8/8 = 100.0%  95% CI [67.6, 100.0]  mean halite 48,628 vs 25,671
+it 80 RESULT rl_v11 vs rl_v9: 8/8 = 100.0%  95% CI [67.6, 100.0]  mean halite 44,908 vs 15,009

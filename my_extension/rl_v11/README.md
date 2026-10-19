@@ -1,0 +1,87 @@
+# rl_v11 — a 4× wider rl_v10, trained against rl_v10, V71, rl_v9 and itself
+
+*(Predecessor: [`../rl_v10/README.md`](../rl_v10/README.md), whose code rl_v11 reuses.)*
+
+## Goal
+A bigger network than rl_v10, trained against more varied opponents including rl_v10 itself, that beats
+rl_v10, V71 and rl_v9. Every decision (ship moves, dropoffs, spawning) stays learned, with no hand-coded
+behaviour.
+
+## Final verdict (2026-10-19): GOAL MET
+
+`checkpoints/best.pt` (= training snapshot 80). Fresh seeds through the real engine (`halite_engine.py`, all
+bots as subprocesses), seats alternated, sampled actions:
+
+| Opponent | Wins | 95% CI (Wilson) | Mean halite rl_v11 / opponent | Seat 0 / seat 1 | Median margin |
+|---|---|---|---|---|---|
+| **rl_v10** | **187/200** | 89.2–96.2% | 44,973 / 31,715 | 93/100, 94/100 | +12,583 |
+| **V71** | **98/100** | 93.0–99.4% | 52,395 / 24,121 | 50/50, 48/50 | +25,986 |
+| **rl_v9** | **97/100** | 91.5–99.0% | 46,576 / 16,367 | 48/50, 49/50 | +28,070 |
+
+For comparison, rl_v10 scored 79/100 vs V71 and 89/100 vs rl_v9.
+
+```bash
+# reproduce (from my_extension/)
+python rl_v10/evaluate.py --opponent rl_v10 --name rl_v11 --games 200 --seed0 2900000 --model rl_v11/checkpoints/best.pt
+python rl_v10/evaluate.py --opponent v71    --name rl_v11 --games 100 --seed0 2900000 --model rl_v11/checkpoints/best.pt
+python rl_v10/evaluate.py --opponent rl_v9  --name rl_v11 --games 100 --seed0 2900000 --model rl_v11/checkpoints/best.pt
+```
+Per-game rows: `results/final_eval.csv`; screening: `results/screen.csv`; periodic checks:
+`results/eval_summary.txt` and `results/eval_history.csv`.
+
+## What changed from rl_v10
+* **Network:** 64 channels × 6 residual blocks, 534k parameters (rl_v10: 32 × 6, 143k). Same inputs, heads and
+  masks (`rl_v10/model.py`, `rl_v10/obs.py`).
+* **Start:** `widen.py` copies rl_v10's learned weights into the wide network function-preservingly
+  (Net2Net-style): old→old weights copied, weights into new channels small random, every weight from a new
+  channel into an old channel or a head zero. The widened net reproduces rl_v10's outputs exactly (max
+  difference 0.0), and the new channels receive gradients. No imitation step.
+* **Opponents per 16-game batch:** ~25% frozen rl_v10 (in-process), 20% real V71, 15% real rl_v9
+  (subprocesses via `rl_v10/ext.py`), the rest mirror self-play and rl_v11's own snapshots.
+* **Same PPO and rewards as rl_v10** (see its README); no spawn warm-up or curriculum, since the widened
+  network already plays well.
+
+## Is it fully learned?
+Yes. It plays through the unchanged `rl_v10/bot.py` (only a `--name` option was added): each turn the board
+is encoded, the network runs once, and every ship action plus the spawn decision is sampled from its
+outputs. The only constraints are the game's legality masks and the mask on spawning onto our own ship.
+There is no endgame recall, collision resolver or spawn rule. The reward function is a design choice.
+
+## Training log
+* 80 iterations × 16 games = 1,280 training games, ≈5.3 h of compute (≈4 min per iteration, 4 CPU cores).
+* Training-game win rates (per 20 iterations):
+
+  | Iterations | vs rl_v10 | vs V71 | vs rl_v9 |
+  |---|---|---|---|
+  | 1–20 | 0.67 | 0.83 | 0.92 |
+  | 21–40 | 0.84 | 0.92 | 0.99 |
+  | 41–60 | 0.92 | 0.98 | 0.98 |
+  | 61–80 | 0.91 | 0.90 | 1.00 |
+
+* Real-engine checks (24 games vs rl_v10, 8 vs each of the others):
+
+  | Iteration | vs rl_v10 | vs V71 | vs rl_v9 |
+  |---|---|---|---|
+  | 20 | 20/24 | 7/8 | 8/8 |
+  | 40 | 20/24 | 8/8 | 8/8 |
+  | 60 | 23/24 | 7/8 | 8/8 |
+  | 80 | 23/24 | 8/8 | 8/8 |
+
+* Training was stopped at iteration 80 because the curve had flattened. Screening on 48 fresh games vs rl_v10:
+  snapshots 60 / 70 / 80 scored 44 / 45 / 45; snapshot 80 was kept and verified above.
+
+## Caveats
+* rl_v11 trained directly against all three opponents, so part of its edge may be opponent-specific.
+* Like rl_v10, it learned under this engine's rules, including its quirks (double-counted dropoff credit,
+  bots told the game lasts 500 turns).
+
+## Files and commands
+`widen.py` builds the starting checkpoint; `eval_loop.sh` runs the periodic checks. Training (from
+`my_extension/rl_v10/`):
+```bash
+python ../rl_v11/widen.py
+python train.py --out ../rl_v11/checkpoints --resume ../rl_v11/checkpoints/init.pt --ch 64 --blocks 6 \
+  --spawn-warmup 0 --curr-iters 0 --lr 3e-4 --epochs 3 --mb 128 --target-kl 0.05 --ent 0.005 \
+  --fixed-opp "$(pwd)/checkpoints/best.pt" --p-fixed 0.25 --p-v71 0.2 --p-v9 0.15
+```
+Play: `python rl_v10/bot.py --model rl_v11/checkpoints/best.pt --name rl_v11`.
