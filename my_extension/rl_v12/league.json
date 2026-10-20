@@ -1,21 +1,66 @@
 {
-  "self": 0.2,
-  "snapshots": 0.15,
+  "self": 0.15,
+  "snapshots": 0.1,
   "pfsp_power": 1.5,
   "pfsp_floor": 0.1,
   "opponents": [
-    {"name": "champion", "net": "rl_v12/checkpoints/best.pt", "greedy": true},
-    {"name": "rl_v11", "net": "rl_v11/checkpoints/best.pt", "greedy": true},
-    {"name": "rl_v11_sampled", "net": "rl_v11/checkpoints/best.pt"},
-    {"name": "rl_v10", "net": "rl_v10/checkpoints/best.pt"},
-    {"name": "V71", "ext": "v71"},
-    {"name": "rl_v9", "ext": "rl_v9"},
-    {"name": "rl_v8", "ext": "rl_v8"},
-    {"name": "rl_v7", "ext": "rl_v7"},
-    {"name": "rl_v5", "ext": "rl_v5"},
-    {"name": "rl_v4", "ext": "rl_v4"},
-    {"name": "rl_v3", "ext": "rl_v3"},
-    {"name": "rl_v2", "ext": "rl_v2"},
-    {"name": "rl_v1", "ext": "rl_v1"}
-  ]
+    {
+      "name": "champion",
+      "net": "rl_v12/checkpoints/best.pt",
+      "greedy": true
+    },
+    {
+      "name": "rl_v11",
+      "net": "rl_v11/checkpoints/best.pt",
+      "greedy": true
+    },
+    {
+      "name": "rl_v11_sampled",
+      "net": "rl_v11/checkpoints/best.pt"
+    },
+    {
+      "name": "rl_v10",
+      "net": "rl_v10/checkpoints/best.pt"
+    },
+    {
+      "name": "V71",
+      "ext": "v71"
+    },
+    {
+      "name": "rl_v9",
+      "ext": "rl_v9"
+    },
+    {
+      "name": "rl_v8",
+      "ext": "rl_v8"
+    },
+    {
+      "name": "rl_v7",
+      "ext": "rl_v7"
+    },
+    {
+      "name": "rl_v5",
+      "ext": "rl_v5"
+    },
+    {
+      "name": "rl_v4",
+      "ext": "rl_v4"
+    },
+    {
+      "name": "rl_v3",
+      "ext": "rl_v3"
+    },
+    {
+      "name": "rl_v2",
+      "ext": "rl_v2"
+    },
+    {
+      "name": "rl_v1",
+      "ext": "rl_v1"
+    }
+  ],
+  "focus": {
+    "name": "champion",
+    "share": 0.3
+  }
 }

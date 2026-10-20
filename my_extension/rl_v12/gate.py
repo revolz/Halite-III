@@ -6,7 +6,10 @@ Watches rl_v12/checkpoints for new snapshots (every --every iterations), plays
 each candidate (greedy) against the current champion (greedy) through the real
 engine, and promotes it to checkpoints/best.pt only if it wins at least
 --need of --games.  The training league reads best.pt as "champion", so every
-promotion also hands the learner a stronger opponent.  Runs until stopped.
+promotion also hands the learner a stronger opponent.  On a rejection it writes
+the champion's path to --reset-file, and train.py --reset-file restarts the
+learner from the champion (training tends to drift after a gain).  Runs until
+stopped.
 """
 import argparse
 import glob
@@ -42,6 +45,9 @@ def main():
     ap.add_argument('--games', type=int, default=48)
     ap.add_argument('--need', type=int, default=29, help='wins needed to promote (29/48 = 60%%)')
     ap.add_argument('--workers', type=int, default=2)
+    ap.add_argument('--reset-file', default=os.path.join(CK, 'reset_to'),
+                    help='on rejection, write the champion path here; train.py --reset-file reloads it')
+    ap.add_argument('--no-reset', action='store_true')
     a = ap.parse_args()
     champ = os.path.join(CK, 'best.pt')
     log = os.path.join(CK, 'gate_log.jsonl')
@@ -58,6 +64,8 @@ def main():
             if promoted:
                 net, extra = load(s)
                 save(net, champ, dict(extra, greedy=True, promoted_at_iter=it))
+            elif not a.no_reset:
+                open(a.reset_file, 'w').write(champ)       # learner restarts from the champion
             rec = {'candidate': os.path.basename(s), 'iter': it, 'wins': w, 'games': n,
                    'promoted': promoted, 'time': time.strftime('%Y-%m-%d %H:%M:%S')}
             open(log, 'a').write(json.dumps(rec) + '\n')

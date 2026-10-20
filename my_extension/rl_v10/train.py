@@ -94,6 +94,9 @@ def league_spec_pick(args, rng, pool, stats):
         w = np.arange(1, k + 1, dtype=float)
         return pool[rng.choice(k, p=w / w.sum())], 'snapshot'
     opps = spec['opponents']
+    focus = spec.get('focus')                       # fixed share of games vs one named opponent
+    if focus and r < spec.get('self', 0.25) + spec.get('snapshots', 0.15) + focus['share']:
+        opps = [o for o in opps if o['name'] == focus['name']] or opps
     p, floor = spec.get('pfsp_power', 2.0), spec.get('pfsp_floor', 0.05)
     w = np.array([max(floor, 1.0 - stats.get(o['name'], {}).get('win', 0.5)) ** p for o in opps])
     o = opps[rng.choice(len(opps), p=w / w.sum())]
@@ -469,6 +472,7 @@ def main():
     ap.add_argument('--p-self', type=float, default=0.5)
     ap.add_argument('--league', default=None, help='league JSON (re-read every iteration); overrides --p-* mixing')
     ap.add_argument('--league-ema', type=float, default=0.05, help='per-game smoothing of league win rates')
+    ap.add_argument('--reset-file', default=None, help='if this file appears, reload the checkpoint path it contains (e.g. after a failed gate)')
     ap.add_argument('--fixed-opp', default=None, help='checkpoint of a frozen opponent (e.g. rl_v10/checkpoints/best.pt)')
     ap.add_argument('--p-fixed', type=float, default=0.0, help='fraction of games vs --fixed-opp')
     ap.add_argument('--p-v71', type=float, default=0.0, help='fraction of games vs the real V71 bot')
@@ -512,6 +516,13 @@ def main():
     for it in range(start_it + 1, start_it + args.iters + 1):
         t0 = time.time()
         args.it = it
+        if args.reset_file and os.path.exists(args.reset_file):
+            src = open(args.reset_file).read().strip()
+            fresh, _ = load(src)
+            net.load_state_dict(fresh.state_dict())
+            opt = torch.optim.Adam(net.parameters(), lr=args.lr)
+            os.remove(args.reset_file)
+            print(f'it {it}: reset learner to {src}', flush=True)
         net.eval()
         data, scores, stats = rollout(net, league, args, rng)
         t1 = time.time()
