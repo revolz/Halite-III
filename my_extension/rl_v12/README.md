@@ -73,5 +73,8 @@ did its job and kept the better bot.
 
 ### Run 2 (from iteration 60): restart from the champion at lr 1e-4
 After two failed gates in a row, the learner was restarted from the champion's weights with a 3× lower
-learning rate, so it refines the gain instead of drifting away from it. Iteration numbering continues
-(next gates at 80, 100, …).
+learning rate, so it refines the gain instead of drifting away from it. Iteration numbering continues.
+
+| Iteration | Wins vs champion | Outcome |
+|---|---|---|
+| 80 | 30/48 | **Promoted** (champion was snapshot 20) |
