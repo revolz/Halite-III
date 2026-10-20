@@ -119,6 +119,7 @@ promoted only with at least 115/200 overall (57.5%, where the 95% CI lower bound
 | 200 | 18/48 (37.5%) | — | — | Rejected; learner reset to the champion |
 | 220 | 15/48 (31.3%) | — | — | Rejected; learner reset to the champion |
 | 240 | 26/48 (54.2%) | — | — | Rejected (below the 29-win screen); learner reset to the champion |
+| 260 | 16/48 (33.3%) | — | — | Rejected; learner reset to the champion |
 
 Larger checks of champion snapshot 160, fresh seeds (seed0 7700000), real engine, greedy:
 

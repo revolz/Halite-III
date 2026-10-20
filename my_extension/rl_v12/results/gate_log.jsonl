@@ -11,3 +11,4 @@
 {"candidate": "snap_00200.pt", "iter": 200, "wins": 18, "games": 48, "confirm_wins": 0, "confirm_games": 0, "promoted": false, "time": "2026-10-20 17:49:40"}
 {"candidate": "snap_00220.pt", "iter": 220, "wins": 15, "games": 48, "confirm_wins": 0, "confirm_games": 0, "promoted": false, "time": "2026-10-20 19:56:33"}
 {"candidate": "snap_00240.pt", "iter": 240, "wins": 26, "games": 48, "confirm_wins": 0, "confirm_games": 0, "promoted": false, "time": "2026-10-20 21:28:12"}
+{"candidate": "snap_00260.pt", "iter": 260, "wins": 16, "games": 48, "confirm_wins": 0, "confirm_games": 0, "promoted": false, "time": "2026-10-20 22:55:18"}
