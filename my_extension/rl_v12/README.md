@@ -47,4 +47,31 @@ The value of rl_v12 is that it keeps adapting as new opponents are added, and on
 improvements.
 
 ## Results
-*(filled in as the run progresses)*
+*(updated as the run progresses)*
+
+### Run 1 (iterations 1–60, lr 3e-4, started from rl_v11)
+Champion gate, each candidate (greedy) vs the current champion (greedy), 48 real-engine games:
+
+| Iteration | Wins | Outcome |
+|---|---|---|
+| 20 | 32/48 | **Promoted** (champion was rl_v11) |
+| 40 | 16/48 | Rejected |
+| 60 | 17/48 | Rejected |
+
+Larger checks of the champion (snapshot 20), fresh seeds, real engine, greedy:
+
+| Opponent | Wins | 95% CI | Mean halite rl_v12 / opponent |
+|---|---|---|---|
+| **rl_v11 (greedy)** | **138/200** | 62.3–75.0% | 46,756 / 44,275 (69/100 from each seat) |
+| **V71** | **100/100** | 96.3–100% | 54,054 / 15,516 |
+| **rl_v9** | **100/100** | 96.3–100% | 48,197 / 11,615 |
+
+So the first promotion was real: continual training produced a bot clearly stronger than rl_v11 within 20
+iterations. Training then drifted. In training games the sampled learner won only ~40–55% against the greedy
+champion and rl_v11 while beating everyone else ~100%, and snapshots 40 and 60 lost to the champion. The gate
+did its job and kept the better bot.
+
+### Run 2 (from iteration 60): restart from the champion at lr 1e-4
+After two failed gates in a row, the learner was restarted from the champion's weights with a 3× lower
+learning rate, so it refines the gain instead of drifting away from it. Iteration numbering continues
+(next gates at 80, 100, …).
