@@ -63,10 +63,16 @@ periodic checks: `results/eval_summary.txt` and `results/eval_history.csv`.
   network already plays well.
 
 ## Is it fully learned?
-Yes. It plays through the unchanged `rl_v10/bot.py` (only a `--name` option was added): each turn the board
-is encoded, the network runs once, and every ship action plus the spawn decision is sampled from its
-outputs. The only constraints are the game's legality masks and the mask on spawning onto our own ship.
-There is no endgame recall, collision resolver or spawn rule. The reward function is a design choice.
+Yes. It plays through the shared `rl_v10/bot.py`: each turn the board is encoded, the network runs once, and
+every ship action plus the spawn decision is taken from its outputs. By default that is the most likely action
+(greedy, stored in the checkpoint); with `--sample`, actions are drawn from the network's probabilities. The
+only constraints are the game's legality masks and the mask on spawning onto our own ship. There is no endgame
+recall, collision resolver or spawn rule. The reward function is a design choice.
+
+Ships coordinate without communicating: one network scores every ship from the whole board in a single pass,
+so all ships follow the same learned conventions, and training penalizes friendly crashes (lost cargo and
+hull). Measured over 400 replayed games per mode: about 2.3–2.7 open-map friendly crashes per game when greedy and
+2.8–3.0 when sampled.
 
 ## Training log
 * 80 iterations × 16 games = 1,280 training games, ≈5.3 h of compute (≈4 min per iteration, 4 CPU cores).

@@ -379,3 +379,34 @@ my_extension/
 ```
 See `my_extension/CHANGELOG.md` for the change history.
 
+
+---
+
+## 10. rl_v10 – rl_v12 (fully learned bots)
+
+Run from `my_extension/`. Details: `rl_v10/README.md` (including all options), `rl_v11/README.md`,
+`rl_v12/README.md`.
+
+```bash
+# Play: rl_v11 plays greedy by default (stored in its checkpoint); rl_v10 samples
+python rl_v10/bot.py --model rl_v11/checkpoints/best.pt --name rl_v11
+python rl_v10/bot.py --model rl_v11/checkpoints/best.pt --name rl_v11 --sample   # sampled play
+
+# Real-engine evaluation (seats alternated, 95% CI printed); add --replays DIR to keep .hlt files
+python rl_v10/evaluate.py --model rl_v11/checkpoints/best.pt --name rl_v11 --opponent v71    --games 100
+python rl_v10/evaluate.py --model rl_v11/checkpoints/best.pt --name rl_v11 --opponent rl_v9  --games 100
+python rl_v10/evaluate.py --model rl_v11/checkpoints/best.pt --name rl_v11 --opponent rl_v10 --games 200
+
+# Any checkpoint vs any checkpoint (e.g. greedy vs sampled)
+python rl_v10/evaluate.py --model rl_v11/checkpoints/best.pt --name rl_v11_greedy --greedy \
+    --opponent rl_v11_sampled --opp-model rl_v11/checkpoints/best.pt --opp-sample --games 100
+
+# Check the simulator still matches the engine (replays saved with the engine)
+python rl_v10/verify_sim.py <replay.hlt> [...]
+
+# rl_v12 continual league training + champion gate (from my_extension/rl_v10/ and my_extension/)
+python train.py --out ../rl_v12/checkpoints --resume ../rl_v12/checkpoints/latest.pt --ch 64 --blocks 6 \
+    --spawn-warmup 0 --curr-iters 0 --lr 3e-4 --epochs 3 --mb 128 --target-kl 0.05 --ent 0.005 \
+    --league ../rl_v12/league.json --iters 100000
+python rl_v12/gate.py
+```

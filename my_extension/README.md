@@ -1,15 +1,19 @@
 # my_extension — teaching a neural network to beat a hand-coded Halite III bot
 
-A series of reinforcement-learning bots (`rl_v1` … `rl_v9`) built in 2026 on a
+A series of reinforcement-learning bots (`rl_v1` … `rl_v12`) built in 2026 on a
 Python re-implementation of the Halite III engine (`halite_engine.py`). The
 arc of the project: start from scratch with pure RL, discover why that fails,
-and end with **rl_v9 — a bot whose decisions are all learned — beating V71,
-the author's strongest hand-written 2019 competition bot, 57.3% over 450
-games.**
+reach **rl_v9 — learned decisions plus two hand-coded "fleet hygiene" rules —
+beating V71, the author's strongest hand-written 2019 competition bot, 57.3%
+over 450 games**, and finally **rl_v10/rl_v11 — no imitation and no hand-coded
+behaviour at all — beating V71 98% and rl_v9 99% (rl_v11, greedy, 100 games
+each).**
 
-Each `rl_v*/` folder is a frozen, self-contained bot (own features, model,
-training scripts); later bots benchmark against earlier ones. Detailed docs
-live in each folder's README; this file is the high-level lineage.
+Each `rl_v*/` folder up to `rl_v10` is a frozen, self-contained bot (own
+features, model, training scripts); later bots benchmark against earlier
+ones. `rl_v11` and `rl_v12` reuse `rl_v10`'s code with their own checkpoints.
+Detailed docs live in each folder's README; this file is the high-level
+lineage.
 
 **Published checkpoints:** every bot ships exactly one weight file,
 `checkpoints/best.pt` — its strongest checkpoint (for rl_v9, the model behind
@@ -34,6 +38,9 @@ hand-coded finite state machine (per-ship states like MINING/RETURNING).*
 | **rl_v7** | Beat rl_v5 by imitating its replays (BC), then improving with PPO; hand-coded collision resolver allowed | **Failed** (≈25% wins). Discovered the **≈58% imitation ceiling** (explained below) and proposed the memory-feature fix that rl_v9 later used |
 | **rl_v8** | Beat rl_v5 and rl_v7 by imitating a stronger teacher: **V71**, the hand-coded 2019 bot, which had just crushed both (9–1, 10–0) | **Failed.** PPO made the bot *worse*, not better (early 4-of-6 vs V71 → ≈20%), and the same ≈58% imitation ceiling reappeared. Diagnosing *why* PPO failed (six bugs, listed in `rl_v9/README.md`) became rl_v9's design document |
 | **rl_v9** | Beat V71 >50%, with moves, spawn, dropoffs and combat **all learned** | **ACHIEVED: 57.3% over 450 games** (95% CI 52.8–61.9%). FleetMemory features broke the imitation ceiling (58% → 86.9% match); fixed PPO improved on BC for the first time in the project. Also beats rl_v8 head-to-head (75% over 100 games) |
+| **rl_v10** | Beat V71 **and** rl_v9 with a fully learned bot: no imitation, no hand-coded collision resolver or endgame recall | **ACHIEVED: 79/100 vs V71** (95% CI 70.0–85.8%), **89/100 vs rl_v9** (81.4–93.7%). Tabula-rasa PPO in an exact batched simulator, full-map conv net (143k params). Lessons: most stalls were reward/exploration bugs, not capacity (see below); and rl_v6's "collision resolution must be hand-coded" turned out to be false |
+| **rl_v11** | A bigger network trained against more varied opponents, including rl_v10 | **ACHIEVED: 193/200 vs rl_v10, 98/100 vs V71, 99/100 vs rl_v9** (greedy play, fresh seeds). rl_v10 widened 4× (534k params) function-preservingly, then 80 PPO iterations (~5 h). Greedy play beats sampled play 61/100 head-to-head and is now the default |
+| **rl_v12** | Keep learning as competition grows | **In progress.** Continual league training against every earlier bot plus its own snapshots, opponents prioritized by how often they still win; a snapshot replaces the champion only after beating it 29+/48 real-engine games |
 
 **The ≈58% imitation ceiling (the "FSM ceiling"), explained:** behavioral
 cloning trains a network to predict, from the board, the action the teacher
@@ -103,6 +110,48 @@ That line — hand-designed inputs, learned policy — is the compromise that
 finally worked after v6's purist attempt and v7/v8's stateless attempts both
 failed.
 
+## rl_v10 and rl_v11 — removing the last hand-coded rules
+
+rl_v10 revisited v6's goal (a bot with nothing hand-coded) with a different
+design, and this time it worked. rl_v11 then scaled it up.
+
+| Component | rl_v9 | rl_v10 / rl_v11 |
+|---|---|---|
+| Starting point | Imitation of V71's replays (BC), then PPO | Random weights, PPO only (rl_v11 starts from rl_v10's learned weights) |
+| Ship moves, spawn, dropoffs, combat | Learned | Learned |
+| Friendly-collision deconfliction | Hand-coded resolver | **Learned** — one network scores the whole fleet from the whole board, and crashes cost reward |
+| Endgame recall | Hand-coded | **Learned** — cargo still aboard at turn 400 is worth nothing |
+| Observations | Hand-engineered features + FleetMemory | Raw board planes (halite, ships, cargo, structures, distances, banks, turns left) |
+| Masks | Physical legality | Game legality + one dominated action (spawning onto your own ship) |
+
+How rl_v10 succeeded where v6 failed:
+
+| Ingredient | Why it mattered |
+|---|---|
+| **Exact batched simulator** (`rl_v10/sim.py`) | 16 games in lock-step, verified turn by turn against `halite_engine.py`; per-ship rewards come straight from the simulator |
+| **Full-map convolutional policy** | All ships decided in one pass from the same board, so the fleet learns shared conventions instead of colliding |
+| **Per-ship credit assignment** | Advantages computed along each ship's own trajectory |
+| **Potential-based shaping** | Cargo is worth more the closer it is to home, giving step-by-step credit for returning without changing the optimal policy |
+| **Training against the real V71/rl_v9** (`rl_v10/ext.py`) | Learns to handle the actual opponents, not only itself |
+| **Diagnosing stalls from logs and replays** | Never-spawn collapse, ramming for free credit, timid updates, and losing fleets scuttling themselves to dodge a per-ship outcome penalty were all reward or exploration bugs, each fixed at the cause (run log in `rl_v10/README.md`) |
+
+Results (real engine, fresh seeds, seats alternated; Wilson 95% CIs):
+
+| Bot | vs V71 | vs rl_v9 | vs rl_v10 |
+|---|---|---|---|
+| rl_v9 | 57.3% (450 games) | — | — |
+| rl_v10 (sampled) | 79/100 (70.0–85.8%) | 89/100 (81.4–93.7%) | — |
+| rl_v11 (greedy) | 98/100 (93.0–99.4%) | 99/100 (94.6–99.8%) | 193/200 (93.0–98.3%) |
+
+What made the difference from rl_v10 to rl_v11, and from sampled to greedy
+play, is documented in `rl_v11/README.md`. rl_v11 picks each ship's most
+likely action at play time; training still samples, which is how it explores.
+
+Caveats, as in their READMEs: both trained partly against V71 and rl_v9, so
+some of the edge may be opponent-specific; and both learned under this
+engine's quirks (dropoff credit counted twice, bots told the game lasts 500
+turns instead of 400).
+
 ## Independent verification: full 9-bot round robin (2026-07-04)
 
 To sanity-check the repo end-to-end on a fresh clone, all runnable bots
@@ -160,8 +209,19 @@ tested against rl_v4.
 Raw per-game data: `round_robin_results.csv`; full log: `round_robin_log.txt`;
 driver script: `round_robin.py` (all in this directory).
 
+This round robin predates rl_v10 and rl_v11; their head-to-head results
+against V71, rl_v9 and each other are in the section above and in their
+READMEs.
+
 ## Repo pointers
 
+* `rl_v10/README.md` — the fully learned bot: simulator, network, rewards,
+  the run log of every stall and its fix, verification, and the shared tooling
+  (options of `bot.py`, `evaluate.py`, `train.py`) that rl_v11/rl_v12 reuse.
+* `rl_v11/README.md` — widening rl_v10, the opponent mix, training log,
+  verification, and the greedy vs sampled study.
+* `rl_v12/README.md` — continual league training with a champion gate (in
+  progress).
 * `rl_v9/README.md` — full design, the rl_v8 failure autopsy it fixes, run
   log with all numbers, and how to read the training logs.
 * `halite_engine.py` — the local Python engine every bot trains and

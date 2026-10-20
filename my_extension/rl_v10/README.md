@@ -109,6 +109,29 @@ Screening on 24 fresh games vs V71: snapshots 260 / 270 / 280 scored 14 / 20 / 1
 `train.py` PPO trainer · `ext.py` real-bot opponents · `bot.py` live bot · `evaluate.py` real-engine
 matches · `eval_loop.sh` periodic evals · `diag.py` simulator diagnostics.
 
+## Shared tooling (also used by rl_v11 and rl_v12)
+rl_v11 and rl_v12 reuse this folder's code with their own checkpoints. Options added after rl_v10 shipped
+(rl_v10's own behaviour is unchanged):
+
+| Script | Option | Meaning |
+|---|---|---|
+| `bot.py` | `--greedy` / `--sample` | Most-likely action vs sampled action. Default: the checkpoint's `extra['greedy']` (rl_v10: sampled; rl_v11/rl_v12: greedy) |
+| `bot.py` | `--name NAME` | Name announced to the engine (shown in replays) |
+| `evaluate.py` | `--opponent v71\|rl_v9\|rl_v10` | Built-in opponents |
+| `evaluate.py` | `--opponent LABEL --opp-model PATH [--opp-greedy\|--opp-sample]` | Any checkpoint as the opponent, e.g. rl_v11 greedy vs rl_v11 sampled |
+| `evaluate.py` | `--name`, `--greedy`/`--sample`, `--replays DIR`, `--csv FILE` | Label and play mode of the evaluated bot; save replays / per-game rows |
+| `train.py` | `--fixed-opp PATH --p-fixed F` | Share F of games vs a frozen in-process network |
+| `train.py` | `--p-v71 F`, `--p-v9 F` | Share of games vs the real V71 / rl_v9 bots |
+| `train.py` | `--league FILE [--league-ema A]` | League training (rl_v12): opponent list re-read every iteration, prioritized by win rate |
+| `train.py` | `--reset-spawn-head` | Zero the spawn head's last layer when resuming |
+| `ext.py` | opponents `v71`, `rl_v9`, `rl_v1`…`rl_v8` (not v6) | Engine-protocol bots usable as simulator opponents |
+
+```bash
+# rl_v11 greedy vs rl_v11 sampled, 100 games (from my_extension/)
+python rl_v10/evaluate.py --model rl_v11/checkpoints/best.pt --name rl_v11_greedy --greedy \
+  --opponent rl_v11_sampled --opp-model rl_v11/checkpoints/best.pt --opp-sample --games 100
+```
+
 ```bash
 # train (from rl_v10/), as in the final run
 python train.py --ch 32 --blocks 6 --envs 16 --lr 5e-4 --epochs 3 --mb 128 --target-kl 0.05 \
