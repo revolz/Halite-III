@@ -56,9 +56,9 @@ Champion gate, each candidate (greedy) vs the current champion (greedy), 48 real
 
 | Iteration | Wins | Outcome |
 |---|---|---|
-| 20 | 32/48 | **Promoted** (champion was rl_v11) |
-| 40 | 16/48 | Rejected |
-| 60 | 17/48 | Rejected |
+| 20 | 32/48 (66.7%) | **Promoted** (champion was rl_v11) |
+| 40 | 16/48 (33.3%) | Rejected |
+| 60 | 17/48 (35.4%) | Rejected |
 
 Larger checks of the champion (snapshot 20), fresh seeds, real engine, greedy:
 
@@ -79,8 +79,8 @@ learning rate, so it refines the gain instead of drifting away from it. Iteratio
 
 | Iteration | Wins vs champion | Outcome |
 |---|---|---|
-| 80 | 30/48 | **Promoted** (champion was snapshot 20) |
-| 100 | 18/48 | Rejected |
+| 80 | 30/48 (62.5%) | **Promoted** (champion was snapshot 20) |
+| 100 | 18/48 (37.5%) | Rejected |
 
 Larger checks of champion snapshot 80, fresh seeds (seed0 7300000), real engine, greedy:
 
@@ -105,7 +105,7 @@ then drift.
 
 | Iteration | Wins vs champion | Outcome |
 |---|---|---|
-| 120 | 29/48 | Promoted at exactly the threshold, then **demoted**: a 200-game confirmation gave 105/200 vs snapshot 80 (52.5%, 95% CI 45.6–59.3%), i.e. no better. Snapshot 80 restored as champion |
+| 120 | 29/48 (60.4%) | Promoted at exactly the threshold, then **demoted**: a 200-game confirmation gave 105/200 vs snapshot 80 (52.5%, 95% CI 45.6–59.3%), i.e. no better. Snapshot 80 restored as champion |
 
 Two equal bots reach 29/48 about 10% of the time, so the 48-game gate alone let a lucky snapshot through. Since
 then the gate has two stages: a candidate that passes the 48-game screen plays 152 more games and is
@@ -113,5 +113,5 @@ promoted only with at least 115/200 overall (57.5%, where the 95% CI lower bound
 
 | Iteration | Screen | Confirmation | Total | Outcome |
 |---|---|---|---|---|
-| 140 | 20/48 | — | — | Rejected; learner reset to the champion |
-| 160 | 32/48 | 98/152 | **130/200 (65.0%, 95% CI 58.2–71.3%)** | **Promoted** (champion was snapshot 80) |
+| 140 | 20/48 (41.7%) | — | — | Rejected; learner reset to the champion |
+| 160 | 32/48 (66.7%) | 98/152 (64.5%) | **130/200 (65.0%, 95% CI 58.2–71.3%)** | **Promoted** (champion was snapshot 80) |
