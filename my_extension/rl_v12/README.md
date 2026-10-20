@@ -117,3 +117,15 @@ promoted only with at least 115/200 overall (57.5%, where the 95% CI lower bound
 | 160 | 32/48 (66.7%) | 98/152 (64.5%) | **130/200 (65.0%, 95% CI 58.2–71.3%)** | **Promoted** (champion was snapshot 80) |
 | 180 | 15/48 (31.3%) | — | — | Rejected; learner reset to the champion |
 | 200 | 18/48 (37.5%) | — | — | Rejected; learner reset to the champion |
+
+Larger checks of champion snapshot 160, fresh seeds (seed0 7700000), real engine, greedy:
+
+| Opponent | Wins | 95% CI | Mean halite rl_v12 / opponent | Snapshot 80 for comparison |
+|---|---|---|---|---|
+| **rl_v11 (greedy)** | **157/200 (78.5%)** | 72.3–83.6% | 50,083 / 43,184 | 147/200 (73.5%) |
+| **Snapshot 80** | **131/200 (65.5%)** | 58.7–71.7% | 48,910 / 45,608 | — |
+| **V71** | **100/100** | 96.3–100% | 55,451 / 10,180 | 98/100 |
+| **rl_v9** | **98/100** | 93.0–99.4% | 52,464 / 12,742 | 99/100 |
+
+The gain over snapshot 80 replicates on new seeds (65.5% vs the gate's 65.0%) and carries over to rl_v11,
+so the progress is general rather than a counter to the previous champion only.
