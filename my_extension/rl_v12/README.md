@@ -34,7 +34,8 @@ python train.py --out ../rl_v12/checkpoints --resume ../rl_v12/checkpoints/init.
   --spawn-warmup 0 --curr-iters 0 --lr 3e-4 --epochs 3 --mb 128 --target-kl 0.05 --ent 0.005 \
   --league ../rl_v12/league.json --iters 100000
 ```
-and from `my_extension/`: `python rl_v12/gate.py`. To resume after a stop, pass
+and from `my_extension/`: `python rl_v12/gate.py`. Current settings (run 3): `--lr 1e-4 --reset-file
+../rl_v12/checkpoints/reset_to`, resuming from the champion. To resume after a stop, pass
 `--resume ../rl_v12/checkpoints/latest.pt` instead of `init.pt`. To add an opponent, append it to
 `league.json` (`{"name": ..., "ext": <engine bot>}` or `{"name": ..., "net": <checkpoint>, "greedy": true}`).
 
@@ -78,3 +79,25 @@ learning rate, so it refines the gain instead of drifting away from it. Iteratio
 | Iteration | Wins vs champion | Outcome |
 |---|---|---|
 | 80 | 30/48 | **Promoted** (champion was snapshot 20) |
+| 100 | 18/48 | Rejected |
+
+Larger checks of champion snapshot 80, fresh seeds (seed0 7300000), real engine, greedy:
+
+| Opponent | Wins | 95% CI | Mean halite rl_v12 / opponent |
+|---|---|---|---|
+| **Previous champion (snapshot 20)** | **130/200** | 58.2–71.3% | 49,524 / 43,994 |
+| **rl_v11 (greedy)** | **147/200** | 67.0–79.1% | 50,299 / 44,158 |
+| **V71** | **98/100** | 93.0–99.4% | 56,514 / 17,424 |
+| **rl_v9** | **99/100** | 94.6–99.8% | 52,541 / 11,845 |
+
+Each promotion is a real gain: rl_v11 → snapshot 20 (69% head-to-head) → snapshot 80 (65% vs snapshot 20,
+73.5% vs rl_v11). The same pattern also showed: a gain within ~20 iterations of starting from a champion,
+then drift.
+
+### Run 3 (from iteration 100): champion focus + automatic reset
+* `league.json` gives the champion a fixed 30% of games (self-play 15%, snapshots 10%, the remaining 45%
+  prioritized across the whole pool), so training concentrates on the matchup the gate measures.
+* After every rejected gate, `gate.py` writes `checkpoints/reset_to` and the trainer (`--reset-file`)
+  restarts from the champion's weights with a fresh optimizer, so drift never accumulates past one gate
+  interval.
+* Learning rate 1e-4, starting from champion snapshot 80.
