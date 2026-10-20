@@ -7,3 +7,4 @@
 {"candidate": "snap_00120.pt", "iter": 120, "note": "demoted after 200-game confirmation vs snapshot 80: 105/200 (95% CI 45.6-59.3%); champion restored to snapshot 80; gate now requires 115/200", "time": "2026-10-20 11:07:13"}
 {"candidate": "snap_00140.pt", "iter": 140, "wins": 20, "games": 48, "confirm_wins": 0, "confirm_games": 0, "promoted": false, "time": "2026-10-20 12:40:51"}
 {"candidate": "snap_00160.pt", "iter": 160, "wins": 32, "games": 48, "confirm_wins": 98, "confirm_games": 152, "promoted": true, "time": "2026-10-20 14:35:44"}
+{"candidate": "snap_00180.pt", "iter": 180, "wins": 15, "games": 48, "confirm_wins": 0, "confirm_games": 0, "promoted": false, "time": "2026-10-20 16:15:54"}
