@@ -4,8 +4,10 @@ rl_v12 / gate.py -- champion gate for continual training.
 
 Watches rl_v12/checkpoints for new snapshots (every --every iterations), plays
 each candidate (greedy) against the current champion (greedy) through the real
-engine, and promotes it to checkpoints/best.pt only if it wins at least
---need of --games.  The training league reads best.pt as "champion", so every
+engine.  A candidate that wins at least --need of --games goes on to
+--confirm-games more games and is promoted to checkpoints/best.pt only if it
+wins at least --confirm-need of all of them (default 115/200, so the 95% CI
+lower bound is above 50%).  The training league reads best.pt as "champion", so every
 promotion also hands the learner a stronger opponent.  On a rejection it writes
 the champion's path to --reset-file, and train.py --reset-file restarts the
 learner from the champion (training tends to drift after a gain).  Runs until
@@ -43,7 +45,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--every', type=int, default=20)
     ap.add_argument('--games', type=int, default=48)
-    ap.add_argument('--need', type=int, default=29, help='wins needed to promote (29/48 = 60%%)')
+    ap.add_argument('--need', type=int, default=29, help='screening: wins needed to go to confirmation (29/48 = 60%%)')
+    ap.add_argument('--confirm-games', type=int, default=152, help='extra games for candidates that pass the screen')
+    ap.add_argument('--confirm-need', type=int, default=115,
+                    help='total wins needed over screen + confirmation (115/200: 95%% CI lower bound > 50%%)')
     ap.add_argument('--workers', type=int, default=2)
     ap.add_argument('--reset-file', default=os.path.join(CK, 'reset_to'),
                     help='on rejection, write the champion path here; train.py --reset-file reloads it')
@@ -60,14 +65,18 @@ def main():
             if it % a.every or os.path.basename(s) in seen:
                 continue
             w, n = match(s, champ, a.games, 6_000_000 + it * 100, a.workers)
-            promoted = n > 0 and w >= a.need
+            screened = n > 0 and w >= a.need
+            cw = cn = 0
+            if screened and a.confirm_games:
+                cw, cn = match(s, champ, a.confirm_games, 6_500_000 + it * 1000, a.workers)
+            promoted = screened and (w + cw) >= (a.confirm_need if a.confirm_games else a.need)
             if promoted:
                 net, extra = load(s)
                 save(net, champ, dict(extra, greedy=True, promoted_at_iter=it))
             elif not a.no_reset:
                 open(a.reset_file, 'w').write(champ)       # learner restarts from the champion
             rec = {'candidate': os.path.basename(s), 'iter': it, 'wins': w, 'games': n,
-                   'promoted': promoted, 'time': time.strftime('%Y-%m-%d %H:%M:%S')}
+                   'confirm_wins': cw, 'confirm_games': cn, 'promoted': promoted, 'time': time.strftime('%Y-%m-%d %H:%M:%S')}
             open(log, 'a').write(json.dumps(rec) + '\n')
             print(rec, flush=True)
             seen.add(os.path.basename(s))

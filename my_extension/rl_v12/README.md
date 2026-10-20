@@ -16,8 +16,9 @@ keeps learning as competition grows, without the usual risk of online learning (
    `max(0.1, 1 − win rate)^1.5` (prioritized fictitious self-play). Opponents rl_v12 struggles against come
    up more often. Running win rates are kept in `checkpoints/league_stats.json`.
 4. **Champion gate** (`gate.py`). Every 20 iterations the newest snapshot (greedy) plays the current champion
-   (greedy) for 48 real-engine games. It is promoted to `checkpoints/best.pt` only with at least 29 wins
-   (60%). The champion is also a league opponent, so each promotion raises the bar for the learner.
+   (greedy) for 48 real-engine games; with at least 29 wins it plays 152 more, and it is promoted to
+   `checkpoints/best.pt` only with at least 115/200 overall. After a rejection the learner restarts from the
+   champion. The champion is also a league opponent, so each promotion raises the bar for the learner.
 5. **Greedy play.** `best.pt` stores `greedy = True`; learning samples, competing is greedy (see rl_v11's
    greedy vs sampled study).
 
@@ -104,4 +105,8 @@ then drift.
 
 | Iteration | Wins vs champion | Outcome |
 |---|---|---|
-| 120 | 29/48 | Promoted (champion was snapshot 80), at exactly the 60% threshold, pending a 200-game confirmation |
+| 120 | 29/48 | Promoted at exactly the threshold, then **demoted**: a 200-game confirmation gave 105/200 vs snapshot 80 (52.5%, 95% CI 45.6–59.3%), i.e. no better. Snapshot 80 restored as champion |
+
+Two equal bots reach 29/48 about 10% of the time, so the 48-game gate alone let a lucky snapshot through. Since
+then the gate has two stages: a candidate that passes the 48-game screen plays 152 more games and is
+promoted only with at least 115/200 overall (57.5%, where the 95% CI lower bound is above 50%).
