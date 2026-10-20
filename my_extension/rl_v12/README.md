@@ -101,3 +101,7 @@ then drift.
   restarts from the champion's weights with a fresh optimizer, so drift never accumulates past one gate
   interval.
 * Learning rate 1e-4, starting from champion snapshot 80.
+
+| Iteration | Wins vs champion | Outcome |
+|---|---|---|
+| 120 | 29/48 | Promoted (champion was snapshot 80), at exactly the 60% threshold, pending a 200-game confirmation |
