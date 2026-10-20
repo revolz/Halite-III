@@ -7,27 +7,48 @@ A bigger network than rl_v10, trained against more varied opponents including rl
 rl_v10, V71 and rl_v9. Every decision (ship moves, dropoffs, spawning) stays learned, with no hand-coded
 behaviour.
 
-## Final verdict (2026-10-19): GOAL MET
+## Final verdict (2026-10-20): GOAL MET
 
-`checkpoints/best.pt` (= training snapshot 80). Fresh seeds through the real engine (`halite_engine.py`, all
-bots as subprocesses), seats alternated, sampled actions:
+`checkpoints/best.pt` (= training snapshot 80) plays **greedy** by default: each ship takes its most likely
+action. The setting is stored in the checkpoint (`extra['greedy'] = True`); `bot.py --sample` restores sampled
+play. Fresh seeds (seed0 3400000) through the real engine (`halite_engine.py`, all bots as subprocesses),
+seats alternated:
 
-| Opponent | Wins | 95% CI (Wilson) | Mean halite rl_v11 / opponent | Seat 0 / seat 1 | Median margin |
-|---|---|---|---|---|---|
-| **rl_v10** | **187/200** | 89.2–96.2% | 44,973 / 31,715 | 93/100, 94/100 | +12,583 |
-| **V71** | **98/100** | 93.0–99.4% | 52,395 / 24,121 | 50/50, 48/50 | +25,986 |
-| **rl_v9** | **97/100** | 91.5–99.0% | 46,576 / 16,367 | 48/50, 49/50 | +28,070 |
+| Opponent | Wins | 95% CI (Wilson) | Mean halite rl_v11 / opponent |
+|---|---|---|---|
+| **rl_v10** | **193/200** | 93.0–98.3% | 47,953 / 30,412 |
+| **V71** | **98/100** | 93.0–99.4% | 50,309 / 15,091 |
+| **rl_v9** | **99/100** | 94.6–99.8% | 48,994 / 12,784 |
 
 For comparison, rl_v10 scored 79/100 vs V71 and 89/100 vs rl_v9.
 
 ```bash
-# reproduce (from my_extension/)
-python rl_v10/evaluate.py --opponent rl_v10 --name rl_v11 --games 200 --seed0 2900000 --model rl_v11/checkpoints/best.pt
-python rl_v10/evaluate.py --opponent v71    --name rl_v11 --games 100 --seed0 2900000 --model rl_v11/checkpoints/best.pt
-python rl_v10/evaluate.py --opponent rl_v9  --name rl_v11 --games 100 --seed0 2900000 --model rl_v11/checkpoints/best.pt
+# reproduce (from my_extension/); best.pt plays greedy by default
+python rl_v10/evaluate.py --opponent rl_v10 --name rl_v11 --games 200 --seed0 3400000 --model rl_v11/checkpoints/best.pt
+python rl_v10/evaluate.py --opponent v71    --name rl_v11 --games 100 --seed0 3400000 --model rl_v11/checkpoints/best.pt
+python rl_v10/evaluate.py --opponent rl_v9  --name rl_v11 --games 100 --seed0 3400000 --model rl_v11/checkpoints/best.pt
 ```
-Per-game rows: `results/final_eval.csv`; screening: `results/screen.csv`; periodic checks:
-`results/eval_summary.txt` and `results/eval_history.csv`.
+
+### Greedy vs sampled play
+The same network on identical maps (seed0 3400000), with replays to count collisions:
+
+| Matchup | Greedy | Sampled |
+|---|---|---|
+| vs rl_v10 | 193/200 (96.5%), 47,953 vs 30,412 | 187/200 (93.5%), 44,853 vs 30,983 |
+| vs V71 | 98/100, 50,309 vs 15,091 | 99/100, 52,513 vs 21,692 |
+| vs rl_v9 | 99/100, 48,994 vs 12,784 | 97/100, 45,856 vs 15,111 |
+| Friendly crashes per game (vs rl_v10 / V71 / rl_v9) | 2.48 / 2.30 / 2.66 | 2.90 / 2.99 / 2.83 |
+
+**Head-to-head, greedy vs sampled: greedy won 61/100 (95% CI 51.2–70.0%), 46,561 vs 42,827 mean halite,
+32/50 and 29/50 by seat.** Greedy beats sampled directly and is at least as strong against every opponent;
+the paired differences against single opponents are not individually significant (sign test p = 0.26, 1.0,
+0.63). Training still samples, which is how the policy explores; greedy is only the play-time choice.
+
+The first verification, with sampled play on seed0 2900000, gave 187/200 vs rl_v10 (89.2–96.2%), 98/100 vs
+V71 and 97/100 vs rl_v9 (`results/final_eval.csv`).
+
+Per-game rows for the greedy/sampled study: `results/greedy_vs_sampled/`; screening: `results/screen.csv`;
+periodic checks: `results/eval_summary.txt` and `results/eval_history.csv`.
 
 ## What changed from rl_v10
 * **Network:** 64 channels × 6 residual blocks, 534k parameters (rl_v10: 32 × 6, 143k). Same inputs, heads and
@@ -84,4 +105,4 @@ python train.py --out ../rl_v11/checkpoints --resume ../rl_v11/checkpoints/init.
   --spawn-warmup 0 --curr-iters 0 --lr 3e-4 --epochs 3 --mb 128 --target-kl 0.05 --ent 0.005 \
   --fixed-opp "$(pwd)/checkpoints/best.pt" --p-fixed 0.25 --p-v71 0.2 --p-v9 0.15
 ```
-Play: `python rl_v10/bot.py --model rl_v11/checkpoints/best.pt --name rl_v11`.
+Play: `python rl_v10/bot.py --model rl_v11/checkpoints/best.pt --name rl_v11` (greedy by default; add `--sample` for sampled play).

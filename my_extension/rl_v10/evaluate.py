@@ -22,9 +22,9 @@ sys.path.insert(0, MY_EXT)
 PY = sys.executable
 
 
-def bot_cmd(name, model=None, greedy=False, label='rl_v10'):
+def bot_cmd(name, model=None, greedy=None, label='rl_v10'):
     if name == 'rl_v10':
-        g = ' --greedy' if greedy else ''
+        g = {None: '', True: ' --greedy', False: ' --sample'}[greedy]
         model = model or f'{HERE}/checkpoints/best.pt'
         return f'"{PY}" -u "{HERE}/bot.py" --model "{model}" --name {label}{g}'
     if name == 'v71':
@@ -67,12 +67,17 @@ def main():
     ap.add_argument('--opponent', required=True,
                     help="v71, rl_v9, rl_v10, or a label for --opp-model (e.g. rl_v11_sampled)")
     ap.add_argument('--opp-model', default=None, help='checkpoint for a network opponent other than rl_v10')
-    ap.add_argument('--opp-greedy', action='store_true')
+    om = ap.add_mutually_exclusive_group()
+    om.add_argument('--opp-greedy', dest='opp_greedy', action='store_const', const=True, default=None)
+    om.add_argument('--opp-sample', dest='opp_greedy', action='store_const', const=False)
     ap.add_argument('--name', default='rl_v10', help='label of the evaluated bot (e.g. rl_v11)')
     ap.add_argument('--games', type=int, default=20)
     ap.add_argument('--seed0', type=int, default=500000)
     ap.add_argument('--workers', type=int, default=4)
-    ap.add_argument('--greedy', action='store_true')
+    gm = ap.add_mutually_exclusive_group()
+    gm.add_argument('--greedy', dest='greedy', action='store_const', const=True, default=None,
+                    help='force greedy play (default: the checkpoint setting)')
+    gm.add_argument('--sample', dest='greedy', action='store_const', const=False, help='force sampled play')
     ap.add_argument('--replays', default=None, help='directory to save .hlt replays')
     ap.add_argument('--csv', default=None)
     args = ap.parse_args()

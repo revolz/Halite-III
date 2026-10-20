@@ -5,7 +5,11 @@ stdin/stdout protocol).  Parses the raw protocol into the same arrays the
 simulator uses, encodes them with obs.encode, and samples every ship action
 and the spawn decision from the network.  Nothing else decides anything.
 
-Usage: python rl_v10/bot.py [--model rl_v10/checkpoints/best.pt] [--greedy]
+Usage: python rl_v10/bot.py [--model rl_v10/checkpoints/best.pt] [--greedy | --sample]
+
+Play mode: --greedy takes each ship's most likely action, --sample draws from the
+network's probabilities.  With neither, the checkpoint's stored setting is used
+(extra['greedy']; checkpoints without it sample).
 """
 import argparse
 import json
@@ -26,7 +30,9 @@ CMD = {1: 'n', 2: 'e', 3: 's', 4: 'w'}
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--model', default=os.path.join(HERE, 'checkpoints', 'best.pt'))
-    ap.add_argument('--greedy', action='store_true')
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument('--greedy', dest='greedy', action='store_const', const=True, default=None)
+    mode.add_argument('--sample', dest='greedy', action='store_const', const=False)
     ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--dump', default=None, help='debug: save per-turn observations (.npz)')
     ap.add_argument('--name', default='rl_v10', help='name announced to the engine')
@@ -35,7 +41,9 @@ def main():
     if args.seed is not None:
         torch.manual_seed(args.seed)
     from train import policy_step
-    net, _ = load(args.model)
+    net, extra = load(args.model)
+    if args.greedy is None:
+        args.greedy = bool(extra.get('greedy', False))
     net = net.to(memory_format=torch.channels_last).eval()
 
     rd = sys.stdin.readline
