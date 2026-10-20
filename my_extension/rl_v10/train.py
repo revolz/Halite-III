@@ -72,13 +72,35 @@ class League:
         return sorted(glob.glob(os.path.join(self.ckdir, 'snap_*.pt')))
 
     def get(self, path):
-        if path not in self.cache:
-            if len(self.cache) > 6:
+        key = (path, os.path.getmtime(path))            # reloads a checkpoint that was replaced (champion)
+        if key not in self.cache:
+            if len(self.cache) > 12:
                 self.cache.pop(next(iter(self.cache)))
             net, _ = load(path)
             net = net.to(memory_format=torch.channels_last).eval()
-            self.cache[path] = net
-        return self.cache[path]
+            self.cache[key] = net
+        return self.cache[key]
+
+
+def league_spec_pick(args, rng, pool, stats):
+    """League mode: self-play, own snapshots, or a listed opponent chosen by prioritized fictitious
+    self-play (opponents we beat less often are picked more).  Returns (controller key, opponent name)."""
+    spec = json.load(open(args.league))
+    r = rng.random()
+    if r < spec.get('self', 0.25):
+        return 'L', 'self'
+    if r < spec.get('self', 0.25) + spec.get('snapshots', 0.15) and pool:
+        k = len(pool)
+        w = np.arange(1, k + 1, dtype=float)
+        return pool[rng.choice(k, p=w / w.sum())], 'snapshot'
+    opps = spec['opponents']
+    p, floor = spec.get('pfsp_power', 2.0), spec.get('pfsp_floor', 0.05)
+    w = np.array([max(floor, 1.0 - stats.get(o['name'], {}).get('win', 0.5)) ** p for o in opps])
+    o = opps[rng.choice(len(opps), p=w / w.sum())]
+    if 'ext' in o:
+        return 'ext:' + o['ext'], o['name']
+    path = o['net'] if os.path.isabs(o['net']) else os.path.join(os.path.dirname(HERE), o['net'])
+    return ('greedy:' if o.get('greedy') else '') + path, o['name']
 
 
 def phi_coef(dist, args):
@@ -107,7 +129,10 @@ def rollout(net, league, args, rng):
     ctrl = []
     for b in range(B):
         r_ext = rng.random()
-        if args.fixed_opp and r_ext < args.p_fixed:
+        if args.league:
+            opp, oname = league_spec_pick(args, rng, pool, args.league_stats)
+            args.key2name[opp] = oname
+        elif args.fixed_opp and r_ext < args.p_fixed:
             opp = args.fixed_opp
         elif r_ext < args.p_fixed + args.p_v71:
             opp = 'ext:v71'
@@ -169,8 +194,9 @@ def rollout(net, league, args, rng):
             mk = mask[bs, ps]
             fy = fcell[bs, ps, 0]
             fx = fcell[bs, ps, 1]
-            model = net if key == 'L' else league.get(key)
-            a, lp, v, sa, slp, sv = policy_step(model, o, mk, fy, fx)
+            greedy = key.startswith('greedy:')
+            model = net if key == 'L' else league.get(key[7:] if greedy else key)
+            a, lp, v, sa, slp, sv = policy_step(model, o, mk, fy, fx, greedy=greedy)
             if key == 'L' and args.it <= args.spawn_warmup:
                 sa = (rng.random(len(seats)) < args.spawn_explore).astype(np.int64)
             for i, (b, p) in enumerate(seats):
@@ -441,6 +467,8 @@ def main():
     ap.add_argument('--w-win', type=float, default=0.0, help='outcome bonus for ships alive at the end (nonzero teaches losing ships to scuttle early)')
     ap.add_argument('--lam-drop', type=float, default=0.25)
     ap.add_argument('--p-self', type=float, default=0.5)
+    ap.add_argument('--league', default=None, help='league JSON (re-read every iteration); overrides --p-* mixing')
+    ap.add_argument('--league-ema', type=float, default=0.05, help='per-game smoothing of league win rates')
     ap.add_argument('--fixed-opp', default=None, help='checkpoint of a frozen opponent (e.g. rl_v10/checkpoints/best.pt)')
     ap.add_argument('--p-fixed', type=float, default=0.0, help='fraction of games vs --fixed-opp')
     ap.add_argument('--p-v71', type=float, default=0.0, help='fraction of games vs the real V71 bot')
@@ -477,6 +505,9 @@ def main():
     if args.resume and os.path.exists(args.resume + '.opt') and not args.reset_spawn_head:
         opt.load_state_dict(torch.load(args.resume + '.opt'))
     league = League(args.out)
+    args.key2name = {}
+    stats_path = os.path.join(args.out, 'league_stats.json')
+    args.league_stats = json.load(open(stats_path)) if os.path.exists(stats_path) else {}
     logf = open(os.path.join(args.out, 'train_log.jsonl'), 'a')
     for it in range(start_it + 1, start_it + args.iters + 1):
         t0 = time.time()
@@ -492,8 +523,20 @@ def main():
         vs_snap = [s for s in scores if s[2] not in ('L', args.fixed_opp) and not s[2].startswith('ext:')]
         vs_fixed = [s for s in scores if args.fixed_opp and s[2] == args.fixed_opp]
         vs_ext = {k: [s[0] > s[1] for s in scores if s[2] == 'ext:' + k] for k in ('v71', 'rl_v9')}
+        league_it = {}
+        if args.league:
+            for mine_s, theirs_s, key in scores:
+                name = args.key2name.get(key, 'self' if key == 'L' else 'snapshot')
+                won = float(mine_s > theirs_s)
+                league_it.setdefault(name, [0, 0])
+                league_it[name][0] += int(won)
+                league_it[name][1] += 1
+                st_ = args.league_stats.setdefault(name, {'win': 0.5, 'games': 0})
+                st_['win'] += args.league_ema * (won - st_['win'])
+                st_['games'] += 1
+            json.dump(args.league_stats, open(stats_path, 'w'), indent=1)
         rec = {
-            'iter': it, 'games': args.envs, 'mean_bank': float(mine.mean()),
+            'iter': it, 'games': args.envs, 'mean_bank': float(mine.mean()), 'league': league_it,
             'win_snap': float(np.mean([s[0] > s[1] for s in vs_snap])) if vs_snap else None,
             'n_snap': len(vs_snap),
             'win_fixed': float(np.mean([s[0] > s[1] for s in vs_fixed])) if vs_fixed else None, 'n_fixed': len(vs_fixed),
@@ -516,6 +559,8 @@ def main():
             ext_s += f" v71 {rec['bank_v71']:.0f}:{rec['opp_v71']:.0f} w{rec['win_v71']:.2f}"
         if rec['n_v9']:
             ext_s += f" v9 {rec['bank_v9']:.0f}:{rec['opp_v9']:.0f} w{rec['win_v9']:.2f}"
+        if league_it:
+            ext_s += ' | ' + ' '.join(f'{k}:{w}/{n}' for k, (w, n) in sorted(league_it.items()))
         print(f"it {it} dep {stats['deposited']:.0f} bank {rec['mean_bank']:.0f}{ext_s} win_snap {rec['win_snap']} spawns {stats['spawns']} "
               f"drops {stats['drops']} kills {stats['kills']} ent {info.get('ent', 0):.3f} kl {info.get('kl', 0):.4f} "
               f"vl {info.get('vl', 0):.3f} sp_rate {rec['spawn_rate']:.2f} t {rec['t_roll']}+{rec['t_upd']}s", flush=True)
