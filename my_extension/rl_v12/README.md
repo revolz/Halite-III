@@ -110,3 +110,8 @@ then drift.
 Two equal bots reach 29/48 about 10% of the time, so the 48-game gate alone let a lucky snapshot through. Since
 then the gate has two stages: a candidate that passes the 48-game screen plays 152 more games and is
 promoted only with at least 115/200 overall (57.5%, where the 95% CI lower bound is above 50%).
+
+| Iteration | Screen | Confirmation | Total | Outcome |
+|---|---|---|---|---|
+| 140 | 20/48 | — | — | Rejected; learner reset to the champion |
+| 160 | 32/48 | 98/152 | **130/200 (65.0%, 95% CI 58.2–71.3%)** | **Promoted** (champion was snapshot 80) |
