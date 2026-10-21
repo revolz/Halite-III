@@ -1,4 +1,7 @@
-# rl_v12 — continual league learning with a champion gate
+# rl_v12 — the continual learner (strongest bot)
+
+*Easy reference: **the continual learner**: rl_v11 kept training in a league of every earlier bot; a new
+version replaces the champion only after provably beating it. The strongest bot in the repo.*
 
 *(Builds on [`../rl_v11/README.md`](../rl_v11/README.md) and the shared code in `../rl_v10/`.)*
 
@@ -14,6 +17,9 @@ seats alternated, both sides greedy:
 | **Previous champion (snapshot 80)** | **131/200 (65.5%)** | 58.7–71.7% | 48,910 / 45,608 |
 | **V71** | **100/100** | 96.3–100% | 55,451 / 10,180 |
 | **rl_v9** | **98/100** | 93.0–99.4% | 52,464 / 12,742 |
+
+**Final round robin of the top five** (20 games per pair, `../README.md`): rl_v12 went **78-2**, sweeping
+rl_v10, rl_v9 and V71 20-0 and beating rl_v11 18-2.
 
 Promotion chain: rl_v11 → snapshot 20 (69.0% vs rl_v11) → snapshot 80 (65.0% vs snapshot 20, 73.5% vs
 rl_v11) → snapshot 160 (65.0% vs snapshot 80, 78.5% vs rl_v11). No candidate passed the gate in the 140

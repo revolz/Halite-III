@@ -384,6 +384,8 @@ See `my_extension/CHANGELOG.md` for the change history.
 
 ## 10. rl_v10 – rl_v12 (fully learned bots)
 
+rl_v10 = the fully learned bot, rl_v11 = the widened network, rl_v12 = the continual learner (strongest).
+
 Run from `my_extension/`. Details: `rl_v10/README.md` (including all options), `rl_v11/README.md`,
 `rl_v12/README.md`.
 
@@ -400,6 +402,9 @@ python rl_v10/evaluate.py --model rl_v11/checkpoints/best.pt --name rl_v11 --opp
 # Any checkpoint vs any checkpoint (e.g. greedy vs sampled)
 python rl_v10/evaluate.py --model rl_v11/checkpoints/best.pt --name rl_v11_greedy --greedy \
     --opponent rl_v11_sampled --opp-model rl_v11/checkpoints/best.pt --opp-sample --games 100
+
+# Final top-five round robin (rl_v12, rl_v11, rl_v10, rl_v9, V71; 20 games per pair, ~10 min on 4 cores)
+python round_robin_v12.py round_robin_v12_results.csv
 
 # Check the simulator still matches the engine (replays saved with the engine)
 python rl_v10/verify_sim.py <replay.hlt> [...]
