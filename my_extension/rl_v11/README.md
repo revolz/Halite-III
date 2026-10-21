@@ -1,4 +1,8 @@
-# rl_v11 — a 4× wider rl_v10, trained against rl_v10, V71, rl_v9 and itself
+# rl_v11 — the widened network
+
+*Easy reference: **the widened network**: rl_v10's network widened from 32 to 64 channels (2× channels,
+3.7× parameters: 143k → 534k), then trained against rl_v10, V71, rl_v9 and itself. Succeeded by rl_v12
+(the continual learner), which started from rl_v11.*
 
 *(Predecessor: [`../rl_v10/README.md`](../rl_v10/README.md), whose code rl_v11 reuses.)*
 

@@ -16,6 +16,27 @@ ones. `rl_v11` and `rl_v12` reuse `rl_v10`'s code with their own checkpoints.
 Detailed docs live in each folder's README; this file is the high-level
 lineage.
 
+**Conclusion: rl_v12 is the strongest bot in the repo.** In the final round
+robin of the top five (below) it went 78-2, sweeping rl_v10, rl_v9 and V71
+20-0 and beating rl_v11 18-2.
+
+## Quick reference: which version is which
+
+| Version | Easy reference | One-line description |
+|---|---|---|
+| **rl_v12** | **The continual learner** (strongest) | rl_v11 kept training in a league of all earlier bots; a new version replaces the champion only after provably beating it |
+| **rl_v11** | **The widened network** | rl_v10's network widened from 32 to 64 channels (2× channels, 3.7× parameters: 143k → 534k), then trained further; plays greedy |
+| **rl_v10** | **The fully learned bot** | Learned from scratch by self-play: no imitation, no hand-coded rules; the first to beat both V71 and rl_v9 |
+| rl_v9 | The imitation + PPO bot | Imitated V71's replays (with FleetMemory), then PPO; hand-coded collision resolver and endgame recall; first bot to beat V71 |
+| rl_v8 | Imitation of V71 (failed) | BC from V71, then PPO made it worse |
+| rl_v7 | Imitation of rl_v5 (failed) | BC from rl_v5; found the ≈58% imitation ceiling |
+| rl_v6 | Pure-learning attempt (abandoned) | No hand-coded rules; ships kept colliding; no published weights |
+| rl_v5 | The FSM hybrid | Hand-coded state machine with an RL veneer |
+| rl_v4 | Learned dropoffs | First bot to learn when to build dropoffs |
+| rl_v3 | Macro-action PPO baseline | PPO with HOME/PROSPECT macro-actions |
+| rl_v1–v2 | Early experiments | First from-scratch RL attempts |
+| V71 | The 2019 hand-coded bot | The author's strongest 2019 competition bot, the original benchmark |
+
 **Published checkpoints:** every bot ships exactly one weight file,
 `checkpoints/best.pt` — its strongest checkpoint (for rl_v9, the model behind
 the 57.3%-vs-V71 verdict). All other training artifacts (intermediate
@@ -40,7 +61,7 @@ hand-coded finite state machine (per-ship states like MINING/RETURNING).*
 | **rl_v8** | Beat rl_v5 and rl_v7 by imitating a stronger teacher: **V71**, the hand-coded 2019 bot, which had just crushed both (9–1, 10–0) | **Failed.** PPO made the bot *worse*, not better (early 4-of-6 vs V71 → ≈20%), and the same ≈58% imitation ceiling reappeared. Diagnosing *why* PPO failed (six bugs, listed in `rl_v9/README.md`) became rl_v9's design document |
 | **rl_v9** | Beat V71 >50%, with moves, spawn, dropoffs and combat **all learned** | **ACHIEVED: 57.3% over 450 games** (95% CI 52.8–61.9%). FleetMemory features broke the imitation ceiling (58% → 86.9% match); fixed PPO improved on BC for the first time in the project. Also beats rl_v8 head-to-head (75% over 100 games) |
 | **rl_v10** | Beat V71 **and** rl_v9 with a fully learned bot: no imitation, no hand-coded collision resolver or endgame recall | **ACHIEVED: 79/100 vs V71** (95% CI 70.0–85.8%), **89/100 vs rl_v9** (81.4–93.7%). Tabula-rasa PPO in an exact batched simulator, full-map conv net (143k params). Lessons: most stalls were reward/exploration bugs, not capacity (see below); and rl_v6's "collision resolution must be hand-coded" turned out to be false |
-| **rl_v11** | A bigger network trained against more varied opponents, including rl_v10 | **ACHIEVED: 193/200 vs rl_v10, 98/100 vs V71, 99/100 vs rl_v9** (greedy play, fresh seeds). rl_v10 widened 4× (534k params) function-preservingly, then 80 PPO iterations (~5 h). Greedy play beats sampled play 61/100 head-to-head and is now the default |
+| **rl_v11** | A bigger network trained against more varied opponents, including rl_v10 | **ACHIEVED: 193/200 vs rl_v10, 98/100 vs V71, 99/100 vs rl_v9** (greedy play, fresh seeds). rl_v10's network widened function-preservingly from 32 to 64 channels (2× channels, 3.7× parameters: 143k → 534k), then 80 PPO iterations (~5 h). Greedy play beats sampled play 61/100 head-to-head and is now the default |
 | **rl_v12** | Keep learning as competition grows | **ACHIEVED: 157/200 vs rl_v11** (95% CI 72.3–83.6%), 100/100 vs V71, 98/100 vs rl_v9. Continual league training (every earlier bot, the champion, self-play, own snapshots; opponents prioritized by how often they still win) with a champion gate: a snapshot is promoted only after beating the champion 115+/200 real-engine games. Three verified promotions in 300 iterations (~23.5 h). Lessons: training drifts after every gain, so the gate, two-stage confirmation and restarting from the champion are what make continual learning safe |
 
 **The ≈58% imitation ceiling (the "FSM ceiling"), explained:** behavioral
@@ -214,19 +235,80 @@ tested against rl_v4.
 Raw per-game data: `round_robin_results.csv`; full log: `round_robin_log.txt`;
 driver script: `round_robin.py` (all in this directory).
 
-This round robin predates rl_v10 and rl_v11; their head-to-head results
-against V71, rl_v9 and each other are in the section above and in their
-READMEs.
+This round robin predates rl_v10–rl_v12; see the final round robin below.
+
+## Final round robin: the top five (2026-10-21)
+
+The four strongest bots of the project plus V71, every pair playing the same
+10 maps with each bot taking both seats on every map: **20 games per pair, 200
+games total**, real engine (`halite_engine.py`, all bots as subprocesses), no
+ties or errors. Each bot plays in its normal mode: rl_v12 and rl_v11 greedy,
+rl_v10 sampled, rl_v9 deterministic, V71 as written.
+
+### Final standings
+
+| Rank | Bot | Easy reference | Record (W-L) | Win % | Avg Halite | Avg Opp Halite |
+|---|---|---|---|---|---|---|
+| 1 | **rl_v12** | The continual learner | **78-2** | **97.5%** | **54,382** | 22,846 |
+| 2 | **rl_v11** | The widened network | 61-19 | 76.3% | 48,576 | 28,009 |
+| 3 | **rl_v10** | The fully learned bot | 36-44 | 45.0% | 34,727 | 35,749 |
+| 4 | **rl_v9** | The imitation + PPO bot | 13-67 | 16.3% | 12,411 | 40,646 |
+| 5 | **V71** | The 2019 hand-coded bot | 12-68 | 15.0% | 18,638 | 41,484 |
+
+### Head-to-head cross table
+
+Row bot's record vs column bot, out of 20 games each:
+
+| Bot | rl_v12 | rl_v11 | rl_v10 | rl_v9 | V71 |
+|---|---|---|---|---|---|
+| **rl_v12** | — | 18-2 | 20-0 | 20-0 | 20-0 |
+| **rl_v11** | 2-18 | — | 20-0 | 19-1 | 20-0 |
+| **rl_v10** | 0-20 | 0-20 | — | 20-0 | 16-4 |
+| **rl_v9** | 0-20 | 1-19 | 0-20 | — | 12-8 |
+| **V71** | 0-20 | 0-20 | 4-16 | 8-12 | — |
+
+### Mean halite per pair
+
+| Pair | Result | Mean halite |
+|---|---|---|
+| rl_v12 vs rl_v11 | 18-2 | 52,608 vs 40,942 |
+| rl_v12 vs rl_v10 | 20-0 | 56,780 vs 27,946 |
+| rl_v12 vs rl_v9 | 20-0 | 53,661 vs 10,350 |
+| rl_v12 vs V71 | 20-0 | 54,480 vs 12,145 |
+| rl_v11 vs rl_v10 | 20-0 | 50,740 vs 31,641 |
+| rl_v11 vs rl_v9 | 19-1 | 49,670 vs 12,146 |
+| rl_v11 vs V71 | 20-0 | 52,953 vs 15,641 |
+| rl_v10 vs rl_v9 | 20-0 | 38,464 vs 9,499 |
+| rl_v10 vs V71 | 16-4 | 40,855 vs 25,977 |
+| rl_v9 vs V71 | 12-8 | 17,650 vs 20,789 |
+
+What it shows:
+* **A clean ladder**: every newer bot beats every older one; no
+  rock-paper-scissors upsets.
+* **rl_v12 is the strongest**: it lost only 2 of 80 games (both to rl_v11) and
+  scored the most halite in every matchup.
+* **rl_v10 is the turning point**: the first fully learned bot beats rl_v9 20-0
+  and V71 16-4.
+* **rl_v9 vs V71 stays close**: rl_v9 wins the series 12-8 but V71 averages
+  more halite, the same "rl_v9 wins more often, V71 wins bigger" pattern as in
+  `rl_v9/README.md`. At 20 games, 12-8 is within noise.
+* The results agree with the larger verifications in each bot's README (e.g.
+  rl_v12 vs rl_v11 157/200; rl_v10 vs V71 79/100).
+
+Raw per-game data: `round_robin_v12_results.csv`; driver script:
+`round_robin_v12.py` (both in this directory).
 
 ## Repo pointers
 
-* `rl_v10/README.md` — the fully learned bot: simulator, network, rewards,
+* `round_robin_v12.py` / `round_robin_v12_results.csv` — the final top-five
+  round robin.
+* `rl_v12/README.md` — **the continual learner** (strongest bot): every gate
+  decision, verified champions, lessons, and how to continue training.
+* `rl_v11/README.md` — **the widened network**: widening rl_v10, the opponent
+  mix, training log, verification, and the greedy vs sampled study.
+* `rl_v10/README.md` — **the fully learned bot**: simulator, network, rewards,
   the run log of every stall and its fix, verification, and the shared tooling
   (options of `bot.py`, `evaluate.py`, `train.py`) that rl_v11/rl_v12 reuse.
-* `rl_v11/README.md` — widening rl_v10, the opponent mix, training log,
-  verification, and the greedy vs sampled study.
-* `rl_v12/README.md` — continual league training with a champion gate: every
-  gate decision, verified champions, lessons, and how to continue training.
 * `rl_v9/README.md` — full design, the rl_v8 failure autopsy it fixes, run
   log with all numbers, and how to read the training logs.
 * `halite_engine.py` — the local Python engine every bot trains and

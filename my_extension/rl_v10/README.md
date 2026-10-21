@@ -1,4 +1,10 @@
-# rl_v10 — tabula-rasa self-play RL that beats V71 and rl_v9
+# rl_v10 — the fully learned bot
+
+*Easy reference: **the fully learned bot**: learned from scratch by self-play, with no imitation and no
+hand-coded rules. Succeeded by rl_v11 (the widened network) and rl_v12 (the continual learner).*
+
+## Summary
+Tabula-rasa self-play RL that beats V71 and rl_v9.
 
 *(For the full rl_v1→v9 lineage see [`../README.md`](../README.md).)*
 
