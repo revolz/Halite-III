@@ -7,7 +7,8 @@ reach **rl_v9 — learned decisions plus two hand-coded "fleet hygiene" rules �
 beating V71, the author's strongest hand-written 2019 competition bot, 57.3%
 over 450 games**, and finally **rl_v10/rl_v11 — no imitation and no hand-coded
 behaviour at all — beating V71 98% and rl_v9 99% (rl_v11, greedy, 100 games
-each).**
+each)**, and **rl_v12 — continual league training — beating rl_v11 78.5% over
+200 games.**
 
 Each `rl_v*/` folder up to `rl_v10` is a frozen, self-contained bot (own
 features, model, training scripts); later bots benchmark against earlier
@@ -40,7 +41,7 @@ hand-coded finite state machine (per-ship states like MINING/RETURNING).*
 | **rl_v9** | Beat V71 >50%, with moves, spawn, dropoffs and combat **all learned** | **ACHIEVED: 57.3% over 450 games** (95% CI 52.8–61.9%). FleetMemory features broke the imitation ceiling (58% → 86.9% match); fixed PPO improved on BC for the first time in the project. Also beats rl_v8 head-to-head (75% over 100 games) |
 | **rl_v10** | Beat V71 **and** rl_v9 with a fully learned bot: no imitation, no hand-coded collision resolver or endgame recall | **ACHIEVED: 79/100 vs V71** (95% CI 70.0–85.8%), **89/100 vs rl_v9** (81.4–93.7%). Tabula-rasa PPO in an exact batched simulator, full-map conv net (143k params). Lessons: most stalls were reward/exploration bugs, not capacity (see below); and rl_v6's "collision resolution must be hand-coded" turned out to be false |
 | **rl_v11** | A bigger network trained against more varied opponents, including rl_v10 | **ACHIEVED: 193/200 vs rl_v10, 98/100 vs V71, 99/100 vs rl_v9** (greedy play, fresh seeds). rl_v10 widened 4× (534k params) function-preservingly, then 80 PPO iterations (~5 h). Greedy play beats sampled play 61/100 head-to-head and is now the default |
-| **rl_v12** | Keep learning as competition grows | **In progress.** Continual league training against every earlier bot plus its own snapshots, opponents prioritized by how often they still win; a snapshot replaces the champion only after beating it 29+/48 real-engine games |
+| **rl_v12** | Keep learning as competition grows | **ACHIEVED: 157/200 vs rl_v11** (95% CI 72.3–83.6%), 100/100 vs V71, 98/100 vs rl_v9. Continual league training (every earlier bot, the champion, self-play, own snapshots; opponents prioritized by how often they still win) with a champion gate: a snapshot is promoted only after beating the champion 115+/200 real-engine games. Three verified promotions in 300 iterations (~23.5 h). Lessons: training drifts after every gain, so the gate, two-stage confirmation and restarting from the champion are what make continual learning safe |
 
 **The ≈58% imitation ceiling (the "FSM ceiling"), explained:** behavioral
 cloning trains a network to predict, from the board, the action the teacher
@@ -110,10 +111,12 @@ That line — hand-designed inputs, learned policy — is the compromise that
 finally worked after v6's purist attempt and v7/v8's stateless attempts both
 failed.
 
-## rl_v10 and rl_v11 — removing the last hand-coded rules
+## rl_v10, rl_v11 and rl_v12 — removing the last hand-coded rules
 
 rl_v10 revisited v6's goal (a bot with nothing hand-coded) with a different
-design, and this time it worked. rl_v11 then scaled it up.
+design, and this time it worked. rl_v11 then scaled it up, and rl_v12 kept
+training it in a growing league, promoting a new version only when it
+provably beat the old one. All three use the same play code (`rl_v10/bot.py`).
 
 | Component | rl_v9 | rl_v10 / rl_v11 |
 |---|---|---|
@@ -137,14 +140,16 @@ How rl_v10 succeeded where v6 failed:
 
 Results (real engine, fresh seeds, seats alternated; Wilson 95% CIs):
 
-| Bot | vs V71 | vs rl_v9 | vs rl_v10 |
+| Bot | vs V71 | vs rl_v9 | vs its predecessor |
 |---|---|---|---|
 | rl_v9 | 57.3% (450 games) | — | — |
 | rl_v10 (sampled) | 79/100 (70.0–85.8%) | 89/100 (81.4–93.7%) | — |
-| rl_v11 (greedy) | 98/100 (93.0–99.4%) | 99/100 (94.6–99.8%) | 193/200 (93.0–98.3%) |
+| rl_v11 (greedy) | 98/100 (93.0–99.4%) | 99/100 (94.6–99.8%) | 193/200 vs rl_v10 (93.0–98.3%) |
+| rl_v12 (greedy) | 100/100 (96.3–100%) | 98/100 (93.0–99.4%) | 157/200 vs rl_v11 (72.3–83.6%) |
 
 What made the difference from rl_v10 to rl_v11, and from sampled to greedy
-play, is documented in `rl_v11/README.md`. rl_v11 picks each ship's most
+play, is documented in `rl_v11/README.md`; how rl_v12 kept improving after
+training "ended" is in `rl_v12/README.md`. rl_v11 picks each ship's most
 likely action at play time; training still samples, which is how it explores.
 
 Caveats, as in their READMEs: both trained partly against V71 and rl_v9, so
@@ -220,8 +225,8 @@ READMEs.
   (options of `bot.py`, `evaluate.py`, `train.py`) that rl_v11/rl_v12 reuse.
 * `rl_v11/README.md` — widening rl_v10, the opponent mix, training log,
   verification, and the greedy vs sampled study.
-* `rl_v12/README.md` — continual league training with a champion gate (in
-  progress).
+* `rl_v12/README.md` — continual league training with a champion gate: every
+  gate decision, verified champions, lessons, and how to continue training.
 * `rl_v9/README.md` — full design, the rl_v8 failure autopsy it fixes, run
   log with all numbers, and how to read the training logs.
 * `halite_engine.py` — the local Python engine every bot trains and

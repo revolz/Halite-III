@@ -404,7 +404,9 @@ python rl_v10/evaluate.py --model rl_v11/checkpoints/best.pt --name rl_v11_greed
 # Check the simulator still matches the engine (replays saved with the engine)
 python rl_v10/verify_sim.py <replay.hlt> [...]
 
-# rl_v12 continual league training + champion gate (from my_extension/rl_v10/ and my_extension/)
+# rl_v12 champion (strongest bot): python rl_v10/bot.py --model rl_v12/checkpoints/best.pt --name rl_v12
+# rl_v12 continual league training + champion gate (from my_extension/rl_v10/ and my_extension/);
+# see rl_v12/README.md for starting a new learner from best.pt
 python train.py --out ../rl_v12/checkpoints --resume ../rl_v12/checkpoints/latest.pt --ch 64 --blocks 6 \
     --spawn-warmup 0 --curr-iters 0 --lr 3e-4 --epochs 3 --mb 128 --target-kl 0.05 --ent 0.005 \
     --league ../rl_v12/league.json --iters 100000
