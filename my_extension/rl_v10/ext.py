@@ -21,6 +21,9 @@ OPP_CMDS = {
     'v71': f'"{PY}" -u "{MY_EXT}/Year 2019/MyBot - V71/MyBot.py"',
     'rl_v9': f'"{PY}" -u "{MY_EXT}/rl_v9/rl_bot.py" --model "{MY_EXT}/rl_v9/checkpoints/best.pt" --deterministic',
 }
+for _v in (1, 2, 3, 4, 5, 7, 8):
+    OPP_CMDS[f'rl_v{_v}'] = (f'"{PY}" -u "{MY_EXT}/rl_v{_v}/rl_bot.py" '
+                             f'--model "{MY_EXT}/rl_v{_v}/checkpoints/best.pt" --deterministic')
 DIR = {'n': 1, 'e': 2, 's': 3, 'w': 4}
 
 
